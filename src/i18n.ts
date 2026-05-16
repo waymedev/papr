@@ -34,9 +34,13 @@ export function detectLanguage(): Language {
   return "en";
 }
 
-/** Mirror the language into the backend so Rust-side text can be localised. */
+/** Mirror the language into the backend so Rust-side text can be localised,
+ *  then rebuild the tray menu in the new language. */
 function persistToBackend(lang: Language): void {
-  api.setSetting("language", lang).catch(() => {});
+  api
+    .setSetting("language", lang)
+    .then(() => api.refreshTray())
+    .catch(() => {});
 }
 
 /** Switch the active language and remember it across launches. */

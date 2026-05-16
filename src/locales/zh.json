@@ -12,6 +12,19 @@
     "loading": "加载中…",
     "justNow": "刚刚"
   },
+  "tagPicker": {
+    "title": "为这篇文章打标签",
+    "empty": "还没有标签——在下方新建一个。",
+    "createPlaceholder": "新标签…"
+  },
+  "player": {
+    "play": "播放",
+    "pause": "暂停",
+    "back15": "后退 15 秒",
+    "fwd30": "前进 30 秒",
+    "speed": "播放速度",
+    "close": "关闭播放器"
+  },
   "smart": {
     "all": "全部文章",
     "unread": "未读",
@@ -97,8 +110,11 @@
     "tbExtractFullText": "提取全文",
     "tbCopyLink": "复制链接",
     "tbShare": "分享",
+    "tbTags": "标签",
     "tbFocusMode": "焦点阅读 (F)",
     "tbOpenInBrowser": "在浏览器中打开 (⌘O)",
+    "episodePlay": "播放音频",
+    "episodePlaying": "正在播放",
     "readMinutes": "{{count}} 分钟阅读",
     "extractingFullText": "正在提取全文…",
     "noContent": "暂无正文内容。",
@@ -114,6 +130,7 @@
       "appearance": "外观",
       "reading": "阅读",
       "subscriptions": "订阅",
+      "filters": "过滤规则",
       "sync": "同步",
       "shortcuts": "快捷键",
       "notifications": "通知",
@@ -125,6 +142,7 @@
       "appearance": "主题、强调色、密度",
       "reading": "正文字体、字号、版面",
       "subscriptions": "{{count}} 个订阅源",
+      "filters": "针对新文章的关键词规则",
       "sync": "云端同步与第三方服务",
       "shortcuts": "键盘快捷键",
       "notifications": "新文章提醒与角标",
@@ -204,6 +222,37 @@
       "opmlExported": "OPML 已导出到下载文件夹",
       "opmlImported": "已从 OPML 导入 {{count}} 个订阅源",
       "unsubscribed": "已退订 {{title}}"
+    },
+    "filters": {
+      "title": "过滤规则",
+      "intro": "每篇新文章到达时都会经过这些规则。可屏蔽噪声关键词，或自动把你关心的内容标为已读 / 加星。",
+      "newRule": "新建规则",
+      "empty": "还没有规则。",
+      "untitled": "未命名规则",
+      "saved": "规则已保存",
+      "deleted": "规则已删除",
+      "needQuery": "请至少输入一个关键词",
+      "namePlaceholder": "规则名称（可选）",
+      "queryPlaceholder": "关键词，用逗号分隔",
+      "matchIn": "匹配范围",
+      "thenLabel": "则",
+      "scopeLabel": "应用于",
+      "allFeeds": "全部订阅源",
+      "field": {
+        "title": "标题",
+        "author": "作者",
+        "content": "正文",
+        "any": "任意位置"
+      },
+      "action": {
+        "skip": "丢弃",
+        "read": "标为已读",
+        "star": "加星"
+      },
+      "preview": {
+        "checking": "检测中…",
+        "count": "匹配到 {{count}} 篇已有文章"
+      }
     },
     "sync": {
       "freshrss": "FreshRSS 同步",
@@ -355,7 +404,15 @@
     "toastMarkedAllRead": "已全部标为已读",
     "toastRenamed": "已重命名",
     "toastUnsubscribed": "已退订 {{feed}}",
-    "toastFolderDeleted": "已删除文件夹"
+    "toastFolderDeleted": "已删除文件夹",
+    "tags": "标签",
+    "newTagTitle": "新建标签",
+    "renameTagTitle": "重命名标签",
+    "tagNamePlaceholder": "标签名称",
+    "deleteTag": "删除标签",
+    "tagsEmptyHint": "在阅读时给文章打标签，即可在此分组。",
+    "toastTagCreated": "已创建标签",
+    "toastTagDeleted": "已删除标签"
   },
   "error": {
     "db": "数据库出错：{{detail}}",
@@ -366,6 +423,8 @@
     "other": "{{detail}}",
     "unknown": "发生未知错误",
     "noAiKey": "尚未设置 AI API Key，请在「设置 → 高级」中填写",
+    "emptyTagName": "标签名称不能为空",
+    "emptyRuleQuery": "请为规则至少输入一个关键词",
     "noFeedFound": "在该网址未找到可订阅的源",
     "alreadySubscribed": "已经订阅过这个源了",
     "noArticleUrl": "这篇文章没有原文链接",

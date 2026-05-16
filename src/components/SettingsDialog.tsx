@@ -7,7 +7,7 @@ import { useUi } from "../store";
 import { LANGUAGES, setLanguage, type Language } from "../i18n";
 import { feedHost } from "../lib/feedMeta";
 import { errorText } from "../lib/errors";
-import type { Feed } from "../types";
+import type { Feed, Rule, RuleAction, RuleField, RulePreview } from "../types";
 import Icon, { type IconName } from "./Icon";
 import FeedAvatar from "./FeedAvatar";
 
@@ -24,6 +24,7 @@ const SECTIONS: { id: string; labelKey: string; icon: IconName; color: string }[
   { id: "appearance", labelKey: "settings.nav.appearance", icon: "globe", color: "#bb6743" },
   { id: "reading", labelKey: "settings.nav.reading", icon: "eye", color: "#3a4cb8" },
   { id: "subscriptions", labelKey: "settings.nav.subscriptions", icon: "rss", color: "#d97706" },
+  { id: "filters", labelKey: "settings.nav.filters", icon: "mute", color: "#9333ea" },
   { id: "sync", labelKey: "settings.nav.sync", icon: "refresh", color: "#2c8a3e" },
   { id: "shortcuts", labelKey: "settings.nav.shortcuts", icon: "command", color: "#5a5fc4" },
   { id: "notifications", labelKey: "settings.nav.notifications", icon: "inbox", color: "#a8501f" },
@@ -60,6 +61,7 @@ export default function SettingsDialog({
     appearance: t("settings.sub.appearance"),
     reading: t("settings.sub.reading"),
     subscriptions: t("settings.sub.subscriptions", { count: feedCount }),
+    filters: t("settings.sub.filters"),
     sync: t("settings.sub.sync"),
     shortcuts: t("settings.sub.shortcuts"),
     notifications: t("settings.sub.notifications"),
@@ -114,6 +116,9 @@ export default function SettingsDialog({
                 onToast={onToast}
                 onAddFeed={onAddFeed}
               />
+            )}
+            {section === "filters" && (
+              <FiltersSection feeds={feeds.data ?? []} onToast={onToast} />
             )}
             {section === "sync" && <SyncSection onToast={onToast} />}
             {section === "shortcuts" && <ShortcutsSection />}
@@ -1420,6 +1425,280 @@ function AiSettingsGroup({ onToast }: { onToast: (m: string) => void }) {
           }}
         />
       </Row>
+    </div>
+  );
+}
+
+/* ── filters ─────────────────────────────────────────────── */
+function FiltersSection({
+  feeds,
+  onToast,
+}: {
+  feeds: Feed[];
+  onToast: (m: string) => void;
+}) {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const rules = useQuery({ queryKey: ["rules"], queryFn: api.listRules });
+  // `null` = not editing, "new" = the add form, a Rule = editing that rule.
+  const [editing, setEditing] = useState<Rule | "new" | null>(null);
+
+  const refresh = () => qc.invalidateQueries({ queryKey: ["rules"] });
+  const feedName = (id: number | null) =>
+    id == null
+      ? t("settings.filters.allFeeds")
+      : feeds.find((f) => f.id === id)?.title ?? t("settings.filters.allFeeds");
+
+  const toggle = (r: Rule) =>
+    api
+      .updateRule(r.id, r.name, !r.enabled, r.feedId, r.field, r.query, r.action)
+      .then(refresh)
+      .catch((e) => onToast(errorText(e)));
+
+  const remove = (r: Rule) =>
+    api
+      .deleteRule(r.id)
+      .then(() => {
+        refresh();
+        onToast(t("settings.filters.deleted"));
+      })
+      .catch((e) => onToast(errorText(e)));
+
+  const summary = (r: Rule) =>
+    [
+      t(`settings.filters.action.${r.action}`),
+      "·",
+      t(`settings.filters.field.${r.field}`),
+      `“${r.query}”`,
+      "·",
+      feedName(r.feedId),
+    ].join(" ");
+
+  const list = rules.data ?? [];
+
+  return (
+    <>
+      <div className="settings-group" style={{ marginBottom: 18 }}>
+        <h3 className="settings-group-title">{t("settings.filters.title")}</h3>
+        <p className="settings-group-desc">{t("settings.filters.intro")}</p>
+        {editing !== "new" && (
+          <button
+            className="s-btn primary"
+            style={{ marginTop: 10 }}
+            onClick={() => setEditing("new")}
+          >
+            <Icon name="plus" size={12} /> {t("settings.filters.newRule")}
+          </button>
+        )}
+      </div>
+
+      {editing === "new" && (
+        <RuleEditor
+          rule={null}
+          feeds={feeds}
+          onCancel={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            refresh();
+            onToast(t("settings.filters.saved"));
+          }}
+          onToast={onToast}
+        />
+      )}
+
+      <div className="settings-group">
+        {list.length === 0 && editing !== "new" && (
+          <div style={{ padding: "16px 4px", fontSize: 13, color: "var(--muted)" }}>
+            {t("settings.filters.empty")}
+          </div>
+        )}
+        {list.map((r) =>
+          editing !== "new" && typeof editing === "object" && editing?.id === r.id ? (
+            <RuleEditor
+              key={r.id}
+              rule={r}
+              feeds={feeds}
+              onCancel={() => setEditing(null)}
+              onSaved={() => {
+                setEditing(null);
+                refresh();
+                onToast(t("settings.filters.saved"));
+              }}
+              onToast={onToast}
+            />
+          ) : (
+            <div className="rule-row" key={r.id}>
+              <Toggle checked={r.enabled} onChange={() => toggle(r)} />
+              <div className="rule-text" style={{ opacity: r.enabled ? 1 : 0.5 }}>
+                <div className="rule-name">
+                  {r.name || t("settings.filters.untitled")}
+                </div>
+                <div className="rule-summary">{summary(r)}</div>
+              </div>
+              <div className="actions">
+                <button
+                  className="icon-btn"
+                  title={t("common.rename")}
+                  onClick={() => setEditing(r)}
+                >
+                  <Icon name="settings" size={13} />
+                </button>
+                <button
+                  className="icon-btn"
+                  title={t("common.delete")}
+                  onClick={() => remove(r)}
+                >
+                  <Icon name="trash" size={13} />
+                </button>
+              </div>
+            </div>
+          ),
+        )}
+      </div>
+    </>
+  );
+}
+
+function RuleEditor({
+  rule,
+  feeds,
+  onCancel,
+  onSaved,
+  onToast,
+}: {
+  rule: Rule | null;
+  feeds: Feed[];
+  onCancel: () => void;
+  onSaved: () => void;
+  onToast: (m: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [name, setName] = useState(rule?.name ?? "");
+  const [query, setQuery] = useState(rule?.query ?? "");
+  const [field, setField] = useState<RuleField>(rule?.field ?? "title");
+  const [action, setAction] = useState<RuleAction>(rule?.action ?? "skip");
+  const [scope, setScope] = useState(rule?.feedId == null ? "" : String(rule.feedId));
+  const [busy, setBusy] = useState(false);
+  const [preview, setPreview] = useState<RulePreview | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+
+  // Debounced dry-run: count matching stored articles as the draft changes.
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) {
+      setPreview(null);
+      return;
+    }
+    setPreviewing(true);
+    const feedId = scope === "" ? null : Number(scope);
+    const handle = window.setTimeout(() => {
+      api
+        .previewRule(feedId, field, q)
+        .then(setPreview)
+        .catch(() => setPreview(null))
+        .finally(() => setPreviewing(false));
+    }, 400);
+    return () => window.clearTimeout(handle);
+  }, [query, field, scope]);
+
+  const save = async () => {
+    if (!query.trim()) {
+      onToast(t("settings.filters.needQuery"));
+      return;
+    }
+    setBusy(true);
+    const feedId = scope === "" ? null : Number(scope);
+    try {
+      if (rule) {
+        await api.updateRule(rule.id, name, rule.enabled, feedId, field, query, action);
+      } else {
+        await api.createRule(name, feedId, field, query, action);
+      }
+      onSaved();
+    } catch (e) {
+      onToast(errorText(e));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="rule-card">
+      <input
+        className="rule-input"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder={t("settings.filters.namePlaceholder")}
+      />
+      <input
+        className="rule-input"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder={t("settings.filters.queryPlaceholder")}
+      />
+      <div className="rule-fields">
+        <label>
+          {t("settings.filters.matchIn")}
+          <Select
+            value={field}
+            onChange={(v) => setField(v as RuleField)}
+            options={[
+              { value: "title", label: t("settings.filters.field.title") },
+              { value: "author", label: t("settings.filters.field.author") },
+              { value: "content", label: t("settings.filters.field.content") },
+              { value: "any", label: t("settings.filters.field.any") },
+            ]}
+          />
+        </label>
+        <label>
+          {t("settings.filters.thenLabel")}
+          <Select
+            value={action}
+            onChange={(v) => setAction(v as RuleAction)}
+            options={[
+              { value: "skip", label: t("settings.filters.action.skip") },
+              { value: "read", label: t("settings.filters.action.read") },
+              { value: "star", label: t("settings.filters.action.star") },
+            ]}
+          />
+        </label>
+        <label>
+          {t("settings.filters.scopeLabel")}
+          <Select
+            value={scope}
+            onChange={setScope}
+            options={[
+              { value: "", label: t("settings.filters.allFeeds") },
+              ...feeds.map((f) => ({ value: String(f.id), label: f.title })),
+            ]}
+          />
+        </label>
+      </div>
+      {query.trim() && (
+        <div className="rule-preview">
+          <span className="rule-preview-count">
+            {previewing && !preview
+              ? t("settings.filters.preview.checking")
+              : t("settings.filters.preview.count", {
+                  count: preview?.count ?? 0,
+                })}
+          </span>
+          {preview && preview.samples.length > 0 && (
+            <ul className="rule-preview-samples">
+              {preview.samples.map((s, i) => (
+                <li key={i}>{s}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+      <div className="rule-card-actions">
+        <button className="s-btn" onClick={onCancel} disabled={busy}>
+          {t("common.cancel")}
+        </button>
+        <button className="s-btn primary" onClick={save} disabled={busy}>
+          {t("common.save")}
+        </button>
+      </div>
     </div>
   );
 }

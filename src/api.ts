@@ -9,7 +9,12 @@ import type {
   Feed,
   Folder,
   RefreshProgress,
+  Rule,
+  RuleAction,
+  RuleField,
+  RulePreview,
   SmartCounts,
+  Tag,
 } from "./types";
 
 // ── folders ──
@@ -140,3 +145,54 @@ export const freshrssConnect = (
 ) => invoke<void>("freshrss_connect", { url, username, password });
 export const freshrssDisconnect = () => invoke<void>("freshrss_disconnect");
 export const freshrssSync = () => invoke<number>("freshrss_sync");
+
+// ── tray ──
+export const refreshTray = () => invoke<void>("refresh_tray");
+
+// ── tags ──
+export const listTags = () => invoke<Tag[]>("list_tags");
+export const createTag = (name: string) =>
+  invoke<number>("create_tag", { name });
+export const renameTag = (id: number, name: string) =>
+  invoke<void>("rename_tag", { id, name });
+export const setTagColor = (id: number, color: string) =>
+  invoke<void>("set_tag_color", { id, color });
+export const deleteTag = (id: number) => invoke<void>("delete_tag", { id });
+export const reorderTags = (ids: number[]) =>
+  invoke<void>("reorder_tags", { ids });
+export const setArticleTag = (articleId: number, tagId: number, on: boolean) =>
+  invoke<void>("set_article_tag", { articleId, tagId, on });
+
+// ── filter rules ──
+export const listRules = () => invoke<Rule[]>("list_rules");
+export const createRule = (
+  name: string,
+  feedId: number | null,
+  field: RuleField,
+  query: string,
+  action: RuleAction,
+) => invoke<number>("create_rule", { name, feedId, field, query, action });
+export const updateRule = (
+  id: number,
+  name: string,
+  enabled: boolean,
+  feedId: number | null,
+  field: RuleField,
+  query: string,
+  action: RuleAction,
+) =>
+  invoke<void>("update_rule", {
+    id,
+    name,
+    enabled,
+    feedId,
+    field,
+    query,
+    action,
+  });
+export const deleteRule = (id: number) => invoke<void>("delete_rule", { id });
+export const previewRule = (
+  feedId: number | null,
+  field: RuleField,
+  query: string,
+) => invoke<RulePreview>("preview_rule", { feedId, field, query });

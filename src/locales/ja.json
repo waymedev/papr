@@ -12,6 +12,19 @@
     "loading": "読み込み中…",
     "justNow": "たった今"
   },
+  "tagPicker": {
+    "title": "この記事にタグを付ける",
+    "empty": "タグがありません — 下で作成してください。",
+    "createPlaceholder": "新しいタグ…"
+  },
+  "player": {
+    "play": "再生",
+    "pause": "一時停止",
+    "back15": "15秒戻る",
+    "fwd30": "30秒進む",
+    "speed": "再生速度",
+    "close": "プレーヤーを閉じる"
+  },
   "smart": {
     "all": "すべての記事",
     "unread": "未読",
@@ -97,8 +110,11 @@
     "tbExtractFullText": "全文を抽出",
     "tbCopyLink": "リンクをコピー",
     "tbShare": "共有",
+    "tbTags": "タグ",
     "tbFocusMode": "集中モード (F)",
     "tbOpenInBrowser": "ブラウザで開く (⌘O)",
+    "episodePlay": "エピソードを再生",
+    "episodePlaying": "再生中",
     "readMinutes": "{{count}} 分で読了",
     "extractingFullText": "全文を抽出中…",
     "noContent": "本文がありません。",
@@ -114,6 +130,7 @@
       "appearance": "外観",
       "reading": "閲覧",
       "subscriptions": "購読",
+      "filters": "フィルター",
       "sync": "同期",
       "shortcuts": "ショートカット",
       "notifications": "通知",
@@ -125,6 +142,7 @@
       "appearance": "テーマ、アクセントカラー、密度",
       "reading": "本文のフォント、文字サイズ、レイアウト",
       "subscriptions": "{{count}} 件のフィード",
+      "filters": "新着記事へのキーワードルール",
       "sync": "クラウド同期と外部サービス",
       "shortcuts": "キーボードショートカット",
       "notifications": "新着記事の通知とバッジ",
@@ -204,6 +222,37 @@
       "opmlExported": "OPML をダウンロードフォルダにエクスポートしました",
       "opmlImported": "OPML から {{count}} 件のフィードをインポートしました",
       "unsubscribed": "{{title}} の購読を解除しました"
+    },
+    "filters": {
+      "title": "フィルタールール",
+      "intro": "新着記事が届くたびにルールを実行します。ノイズになるキーワードを除外したり、関心のある記事を自動で既読 / スター付きにできます。",
+      "newRule": "新しいルール",
+      "empty": "ルールがまだありません。",
+      "untitled": "名称未設定のルール",
+      "saved": "ルールを保存しました",
+      "deleted": "ルールを削除しました",
+      "needQuery": "キーワードを1つ以上入力してください",
+      "namePlaceholder": "ルール名（任意）",
+      "queryPlaceholder": "キーワード（カンマ区切り）",
+      "matchIn": "対象",
+      "thenLabel": "アクション",
+      "scopeLabel": "適用先",
+      "allFeeds": "すべてのフィード",
+      "field": {
+        "title": "タイトル",
+        "author": "著者",
+        "content": "本文",
+        "any": "すべて"
+      },
+      "action": {
+        "skip": "除外",
+        "read": "既読にする",
+        "star": "スター"
+      },
+      "preview": {
+        "checking": "確認中…",
+        "count": "既存の記事 {{count}} 件に一致"
+      }
     },
     "sync": {
       "freshrss": "FreshRSS 同期",
@@ -355,7 +404,15 @@
     "toastMarkedAllRead": "すべて既読にしました",
     "toastRenamed": "名前を変更しました",
     "toastUnsubscribed": "{{feed}} の購読を解除しました",
-    "toastFolderDeleted": "フォルダを削除しました"
+    "toastFolderDeleted": "フォルダを削除しました",
+    "tags": "タグ",
+    "newTagTitle": "新しいタグ",
+    "renameTagTitle": "タグの名前を変更",
+    "tagNamePlaceholder": "タグ名",
+    "deleteTag": "タグを削除",
+    "tagsEmptyHint": "記事を読みながらタグを付けると、ここにまとまります。",
+    "toastTagCreated": "タグを作成しました",
+    "toastTagDeleted": "タグを削除しました"
   },
   "error": {
     "db": "データベースエラー：{{detail}}",
@@ -366,6 +423,8 @@
     "other": "{{detail}}",
     "unknown": "不明なエラーが発生しました",
     "noAiKey": "AI API キーが未設定です。「設定 → 詳細」で入力してください",
+    "emptyTagName": "タグ名を空にはできません",
+    "emptyRuleQuery": "ルールにキーワードを1つ以上入力してください",
     "noFeedFound": "その URL ではフィードが見つかりませんでした",
     "alreadySubscribed": "このフィードはすでに購読済みです",
     "noArticleUrl": "この記事には元記事の URL がありません",

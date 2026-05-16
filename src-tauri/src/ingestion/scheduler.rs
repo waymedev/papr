@@ -6,7 +6,7 @@ use crate::error::AppResult;
 use crate::ingestion::{fetch, parse};
 use crate::models::RefreshProgress;
 use crate::state::AppState;
-use crate::{notify, sync};
+use crate::{notify, sync, tray};
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{ipc::Channel, AppHandle, Emitter, Manager};
@@ -66,7 +66,7 @@ pub async fn refresh_all(
 ) -> AppResult<usize> {
     let state = app.state::<AppState>();
 
-    let (feeds, concurrency, dedup) = {
+    let (feeds, concurrency, dedup, rules) = {
         let conn = state.db.lock().await;
         let feeds = db::feeds_to_refresh(&conn)?;
         let concurrency = int_setting(&conn, "net_concurrency", 6).clamp(1, 16) as usize;
@@ -75,7 +75,8 @@ pub async fn refresh_all(
             .flatten()
             .map(|v| v == "1")
             .unwrap_or(false);
-        (feeds, concurrency, dedup)
+        let rules = db::active_rules(&conn).unwrap_or_default();
+        (feeds, concurrency, dedup, rules)
     };
     if let Some(p) = &progress {
         let _ = p.send(RefreshProgress::Started { total: feeds.len() });
@@ -116,7 +117,9 @@ pub async fn refresh_all(
                     last_modified,
                 } => {
                     for article in &parsed.articles {
-                        if db::upsert_article(&conn, feed_id, article, dedup).unwrap_or(false) {
+                        if db::upsert_article(&conn, feed_id, article, dedup, &rules)
+                            .unwrap_or(false)
+                        {
                             new_here += 1;
                         }
                     }
@@ -173,6 +176,7 @@ pub async fn refresh_all(
     }
 
     notify::update_badge(app).await;
+    tray::refresh(app).await;
     Ok(total_new)
 }
 

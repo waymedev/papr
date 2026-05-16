@@ -16,6 +16,7 @@ import CommandPalette, { type CommandAction } from "./components/CommandPalette"
 import SettingsDialog from "./components/SettingsDialog";
 import AddFeedDialog from "./components/AddFeedDialog";
 import PromptDialog from "./components/PromptDialog";
+import PlayerBar from "./components/PlayerBar";
 
 // Accent palettes — ported from the design prototype (app.jsx ACCENTS).
 const ACCENTS: Record<
@@ -124,6 +125,14 @@ export default function App() {
       un.then((f) => f());
     };
   }, [qc]);
+
+  // ── "Settings…" from the menu-bar tray ──
+  useEffect(() => {
+    const un = listen("tray-open-settings", () => setSettings({ open: true }));
+    return () => {
+      un.then((f) => f());
+    };
+  }, []);
 
   const doRefresh = useCallback(() => {
     setRefreshing((busy) => {
@@ -275,17 +284,20 @@ export default function App() {
 
   return (
     <>
-      <div className={`window ${focusMode ? "focus" : ""}`}>
-        <Sidebar
-          onAddFeed={() => setAddFeed(true)}
-          onOpenSettings={openSettings}
-          onSearchClick={() => setCpOpen(true)}
-          onRefresh={doRefresh}
-          refreshing={refreshing}
-          onToast={showToast}
-        />
-        <ArticleList onToast={showToast} />
-        <Reader onToast={showToast} />
+      <div className="app-shell">
+        <div className={`window ${focusMode ? "focus" : ""}`}>
+          <Sidebar
+            onAddFeed={() => setAddFeed(true)}
+            onOpenSettings={openSettings}
+            onSearchClick={() => setCpOpen(true)}
+            onRefresh={doRefresh}
+            refreshing={refreshing}
+            onToast={showToast}
+          />
+          <ArticleList onToast={showToast} />
+          <Reader onToast={showToast} />
+        </div>
+        <PlayerBar />
       </div>
 
       <CommandPalette

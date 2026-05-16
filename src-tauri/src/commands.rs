@@ -114,10 +114,13 @@ pub async fn add_feed(
     let dedup = db::get_setting(&conn, "dedup_enabled")?
         .map(|v| v == "1")
         .unwrap_or(false);
+    let rules = db::active_rules(&conn).unwrap_or_default();
+    let mut unread = 0i64;
     for article in &parsed.articles {
-        db::upsert_article(&conn, feed_id, article, dedup)?;
+        if db::upsert_article(&conn, feed_id, article, dedup, &rules)? {
+            unread += 1;
+        }
     }
-    let unread = parsed.articles.len() as i64;
     drop(conn);
 
     Ok(Feed {
@@ -244,6 +247,7 @@ pub async fn mark_all_read(app: AppHandle, query: ArticleQuery) -> AppResult<usi
     };
     let _ = app.emit("feeds-updated", 0);
     crate::notify::update_badge(&app).await;
+    crate::tray::refresh(&app).await;
     Ok(n)
 }
 
@@ -527,6 +531,7 @@ pub async fn clear_all_data(app: AppHandle) -> AppResult<()> {
     }
     let _ = app.emit("feeds-updated", 0);
     crate::notify::update_badge(&app).await;
+    crate::tray::refresh(&app).await;
     Ok(())
 }
 
@@ -583,5 +588,138 @@ pub async fn freshrss_sync(app: AppHandle) -> AppResult<usize> {
     let n = crate::sync::sync_now(&app).await?;
     let _ = app.emit("feeds-updated", 0);
     crate::notify::update_badge(&app).await;
+    crate::tray::refresh(&app).await;
     Ok(n)
+}
+
+/// Rebuild the tray menu — used after a language change.
+#[tauri::command]
+pub async fn refresh_tray(app: AppHandle) -> AppResult<()> {
+    crate::tray::refresh(&app).await;
+    Ok(())
+}
+
+// ─────────────────────────── tags ───────────────────────────
+
+#[tauri::command]
+pub async fn list_tags(state: State<'_, AppState>) -> AppResult<Vec<Tag>> {
+    let conn = state.db.lock().await;
+    db::list_tags(&conn)
+}
+
+#[tauri::command]
+pub async fn create_tag(state: State<'_, AppState>, name: String) -> AppResult<i64> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(AppError::code("emptyTagName"));
+    }
+    let conn = state.db.lock().await;
+    db::create_tag(&conn, name)
+}
+
+#[tauri::command]
+pub async fn rename_tag(state: State<'_, AppState>, id: i64, name: String) -> AppResult<()> {
+    let conn = state.db.lock().await;
+    db::rename_tag(&conn, id, name.trim())
+}
+
+#[tauri::command]
+pub async fn set_tag_color(
+    state: State<'_, AppState>,
+    id: i64,
+    color: String,
+) -> AppResult<()> {
+    let conn = state.db.lock().await;
+    db::set_tag_color(&conn, id, &color)
+}
+
+#[tauri::command]
+pub async fn delete_tag(state: State<'_, AppState>, id: i64) -> AppResult<()> {
+    let conn = state.db.lock().await;
+    db::delete_tag(&conn, id)
+}
+
+/// Attach or detach a tag from one article.
+#[tauri::command]
+pub async fn set_article_tag(
+    state: State<'_, AppState>,
+    article_id: i64,
+    tag_id: i64,
+    on: bool,
+) -> AppResult<()> {
+    let conn = state.db.lock().await;
+    db::set_article_tag(&conn, article_id, tag_id, on)
+}
+
+// ─────────────────────────── filter rules ───────────────────────────
+
+#[tauri::command]
+pub async fn list_rules(state: State<'_, AppState>) -> AppResult<Vec<Rule>> {
+    let conn = state.db.lock().await;
+    db::list_rules(&conn)
+}
+
+#[tauri::command]
+pub async fn create_rule(
+    state: State<'_, AppState>,
+    name: String,
+    feed_id: Option<i64>,
+    field: String,
+    query: String,
+    action: String,
+) -> AppResult<i64> {
+    if query.trim().is_empty() {
+        return Err(AppError::code("emptyRuleQuery"));
+    }
+    let conn = state.db.lock().await;
+    db::create_rule(&conn, name.trim(), feed_id, &field, query.trim(), &action)
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn update_rule(
+    state: State<'_, AppState>,
+    id: i64,
+    name: String,
+    enabled: bool,
+    feed_id: Option<i64>,
+    field: String,
+    query: String,
+    action: String,
+) -> AppResult<()> {
+    let conn = state.db.lock().await;
+    db::update_rule(&conn, id, name.trim(), enabled, feed_id, &field, query.trim(), &action)
+}
+
+#[tauri::command]
+pub async fn delete_rule(state: State<'_, AppState>, id: i64) -> AppResult<()> {
+    let conn = state.db.lock().await;
+    db::delete_rule(&conn, id)
+}
+
+/// Persist a reordered tag list (ids in the new display order).
+#[tauri::command]
+pub async fn reorder_tags(state: State<'_, AppState>, ids: Vec<i64>) -> AppResult<()> {
+    let conn = state.db.lock().await;
+    db::reorder_tags(&conn, &ids)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RulePreview {
+    count: i64,
+    samples: Vec<String>,
+}
+
+/// Dry-run a draft rule against already-stored articles.
+#[tauri::command]
+pub async fn preview_rule(
+    state: State<'_, AppState>,
+    feed_id: Option<i64>,
+    field: String,
+    query: String,
+) -> AppResult<RulePreview> {
+    let conn = state.db.lock().await;
+    let (count, samples) = db::preview_rule(&conn, feed_id, &field, query.trim())?;
+    Ok(RulePreview { count, samples })
 }

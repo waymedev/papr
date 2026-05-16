@@ -4,12 +4,15 @@ import { useTranslation } from "react-i18next";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import * as api from "../api";
 import { useUi } from "../store";
+import { usePlayer } from "../player";
 import { useArticleActions } from "../hooks/articleActions";
 import { renderMarkdown } from "../lib/markdown";
 import { fullDate } from "../lib/feedMeta";
 import { errorText } from "../lib/errors";
+import { tagColor } from "../lib/tagColors";
 import type { ArticleDetail } from "../types";
 import Icon from "./Icon";
+import TagPicker from "./TagPicker";
 
 interface Props {
   onToast: (msg: string) => void;
@@ -38,7 +41,10 @@ export default function Reader({ onToast }: Props) {
 
   const [scrolled, setScrolled] = useState(false);
   const [showExtracted, setShowExtracted] = useState(true);
+  const [tagPick, setTagPick] = useState<{ x: number; y: number } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const playTrack = usePlayer((s) => s.play);
+  const playingSrc = usePlayer((s) => (s.playing ? s.track?.src : null));
 
   const article = useQuery({
     queryKey: ["article", id],
@@ -63,6 +69,7 @@ export default function Reader({ onToast }: Props) {
   useEffect(() => {
     setShowExtracted(true);
     setScrolled(false);
+    setTagPick(null);
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [id]);
 
@@ -182,6 +189,16 @@ export default function Reader({ onToast }: Props) {
           <Icon name={a.readLater ? "bookmark-fill" : "bookmark"} size={16} />
         </button>
         <button
+          className={`tb-btn ${a.tags.length > 0 ? "on" : ""}`}
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            setTagPick((p) => (p ? null : { x: r.left, y: r.bottom + 6 }));
+          }}
+          title={t("reader.tbTags")}
+        >
+          <Icon name="tag" size={16} />
+        </button>
+        <button
           className={`tb-btn ${aiOpen ? "on" : ""}`}
           onClick={() => setAiOpen(!aiOpen)}
           title={t("reader.tbAiSummary")}
@@ -250,6 +267,24 @@ export default function Reader({ onToast }: Props) {
             )}
           </div>
 
+          {a.tags.length > 0 && (
+            <div className="article-tags">
+              {a.tags.map((tag) => (
+                <button
+                  key={tag.id}
+                  className="article-tag"
+                  style={{ "--tag-c": tagColor(tag.color) } as React.CSSProperties}
+                  onClick={() =>
+                    useUi.getState().select({ kind: "tag", value: tag.id }, tag.name)
+                  }
+                >
+                  <span className="tag-dot" />
+                  {tag.name}
+                </button>
+              ))}
+            </div>
+          )}
+
           {ytId ? (
             <iframe
               style={{ width: "100%", aspectRatio: "16 / 9" }}
@@ -263,11 +298,32 @@ export default function Reader({ onToast }: Props) {
 
           {a.enclosures
             .filter((e) => e.mimeType?.startsWith("audio"))
-            .map((e, i) => (
-              <div className="enclosure" key={`a${i}`}>
-                <audio controls src={e.url} />
-              </div>
-            ))}
+            .map((e, i) => {
+              const isPlaying = playingSrc === e.url;
+              return (
+                <button
+                  className={`episode ${isPlaying ? "playing" : ""}`}
+                  key={`a${i}`}
+                  onClick={() =>
+                    playTrack({
+                      articleId: a.id,
+                      title: a.title,
+                      feedTitle: a.feedTitle,
+                      src: e.url,
+                    })
+                  }
+                >
+                  <span className="episode-play">
+                    <Icon name={isPlaying ? "pause" : "play"} size={15} />
+                  </span>
+                  <span className="episode-text">
+                    {isPlaying
+                      ? t("reader.episodePlaying")
+                      : t("reader.episodePlay")}
+                  </span>
+                </button>
+              );
+            })}
           {a.enclosures
             .filter((e) => e.mimeType?.startsWith("video"))
             .map((e, i) => (
@@ -293,6 +349,17 @@ export default function Reader({ onToast }: Props) {
         onClose={() => setAiOpen(false)}
         onToast={onToast}
       />
+
+      {tagPick && (
+        <TagPicker
+          articleId={a.id}
+          attached={a.tags.map((tg) => tg.id)}
+          x={tagPick.x}
+          y={tagPick.y}
+          onClose={() => setTagPick(null)}
+          onToast={onToast}
+        />
+      )}
     </div>
   );
 }

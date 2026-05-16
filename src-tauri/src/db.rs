@@ -101,6 +101,40 @@ static MIGRATIONS: LazyLock<Migrations> = LazyLock::new(|| {
             );
             "#,
         ),
+        // v4 — article tags: a flat label set plus an article↔tag join table.
+        M::up(
+            r#"
+            CREATE TABLE tags (
+                id        INTEGER PRIMARY KEY,
+                name      TEXT NOT NULL UNIQUE,
+                color     TEXT NOT NULL DEFAULT 'clay',
+                position  INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE article_tags (
+                article_id INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+                tag_id     INTEGER NOT NULL REFERENCES tags(id)     ON DELETE CASCADE,
+                PRIMARY KEY (article_id, tag_id)
+            );
+            CREATE INDEX idx_article_tags_tag ON article_tags(tag_id);
+            "#,
+        ),
+        // v5 — filter rules: keyword matches applied to incoming articles to
+        // auto-skip noise, or auto mark-read / star them, at ingestion time.
+        M::up(
+            r#"
+            CREATE TABLE rules (
+                id         INTEGER PRIMARY KEY,
+                name       TEXT NOT NULL,
+                enabled    INTEGER NOT NULL DEFAULT 1,
+                feed_id    INTEGER REFERENCES feeds(id) ON DELETE CASCADE,
+                field      TEXT NOT NULL DEFAULT 'title',
+                query      TEXT NOT NULL,
+                action     TEXT NOT NULL DEFAULT 'skip',
+                position   INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            "#,
+        ),
     ])
 });
 
@@ -353,14 +387,37 @@ pub struct NewArticle {
     pub enclosures: Vec<Enclosure>,
 }
 
+/// True if `rule` (scoped to `feed_id`) matches the incoming article `a`.
+/// The query is a comma-separated keyword list; any substring hit fires it.
+fn rule_matches(rule: &Rule, feed_id: i64, a: &NewArticle) -> bool {
+    if rule.feed_id.is_some_and(|fid| fid != feed_id) {
+        return false;
+    }
+    let author = a.author.as_deref().unwrap_or("");
+    let haystack = match rule.field.as_str() {
+        "author" => author.to_lowercase(),
+        "content" => a.body_text.to_lowercase(),
+        "any" => format!("{} {} {}", a.title, author, a.body_text).to_lowercase(),
+        _ => a.title.to_lowercase(),
+    };
+    rule.query
+        .split(',')
+        .map(|t| t.trim().to_lowercase())
+        .filter(|t| !t.is_empty())
+        .any(|term| haystack.contains(&term))
+}
+
 /// Insert an article if it is new (by feed_id + guid). Returns true if inserted.
 /// When `dedup` is on, an article whose URL already exists (in any feed) is
-/// skipped — collapsing the same story pushed by multiple feeds.
+/// skipped — collapsing the same story pushed by multiple feeds. Enabled
+/// `rules` are evaluated first: a `skip` match drops the article entirely,
+/// while `read` / `star` matches pre-set the article's state on insert.
 pub fn upsert_article(
     conn: &Connection,
     feed_id: i64,
     a: &NewArticle,
     dedup: bool,
+    rules: &[Rule],
 ) -> AppResult<bool> {
     if dedup {
         if let Some(url) = a.url.as_deref().filter(|u| !u.is_empty()) {
@@ -374,14 +431,29 @@ pub fn upsert_article(
             }
         }
     }
+    // Apply filter rules: skip wins outright; read / star tint the new row.
+    let (mut start_read, mut start_starred) = (false, false);
+    for rule in rules {
+        if !rule_matches(rule, feed_id, a) {
+            continue;
+        }
+        match rule.action.as_str() {
+            "skip" => return Ok(false),
+            "read" => start_read = true,
+            "star" => start_starred = true,
+            _ => {}
+        }
+    }
     let n = conn.execute(
         "INSERT INTO articles
-            (feed_id, guid, url, title, author, summary, content_html, body_text, image_url, published_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+            (feed_id, guid, url, title, author, summary, content_html, body_text,
+             image_url, published_at, is_read, is_starred)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
          ON CONFLICT(feed_id, guid) DO NOTHING",
         params![
             feed_id, a.guid, a.url, a.title, a.author, a.summary,
-            a.content_html, a.body_text, a.image_url, a.published_at
+            a.content_html, a.body_text, a.image_url, a.published_at,
+            start_read, start_starred
         ],
     )?;
     if n == 0 {
@@ -425,6 +497,12 @@ pub fn list_articles(
         }
         ArticleQuery::Folder(id) => {
             where_clauses.push("f.folder_id = ?".into());
+            binds.push(Value::Integer(*id));
+        }
+        ArticleQuery::Tag(id) => {
+            where_clauses.push(
+                "a.id IN (SELECT article_id FROM article_tags WHERE tag_id = ?)".into(),
+            );
             binds.push(Value::Integer(*id));
         }
     }
@@ -533,6 +611,7 @@ pub fn get_article(conn: &Connection, id: i64) -> AppResult<ArticleDetail> {
                 read_later: r.get(13)?,
                 ai_summary: r.get(14)?,
                 enclosures: Vec::new(),
+                tags: Vec::new(),
             })
         },
     )?;
@@ -547,6 +626,7 @@ pub fn get_article(conn: &Connection, id: i64) -> AppResult<ArticleDetail> {
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
+    detail.tags = tags_for_article(conn, id)?;
     Ok(detail)
 }
 
@@ -603,8 +683,254 @@ pub fn mark_all_read(conn: &Connection, query: &ArticleQuery) -> AppResult<usize
                 (SELECT id FROM feeds WHERE folder_id = ?1)",
             params![id],
         )?,
+        ArticleQuery::Tag(id) => conn.execute(
+            "UPDATE articles SET is_read = 1 WHERE is_read = 0 AND id IN
+                (SELECT article_id FROM article_tags WHERE tag_id = ?1)",
+            params![id],
+        )?,
     };
     Ok(n)
+}
+
+// ─────────────────────────── tags ───────────────────────────
+
+/// Palette keys cycled through as new tags are created.
+const TAG_COLORS: &[&str] = &[
+    "clay", "amber", "pine", "teal", "indigo", "violet", "rose", "slate",
+];
+
+/// Every tag, ordered for the sidebar, with a live article count.
+pub fn list_tags(conn: &Connection) -> AppResult<Vec<Tag>> {
+    let mut stmt = conn.prepare(
+        "SELECT t.id, t.name, t.color, t.position,
+                (SELECT COUNT(*) FROM article_tags at WHERE at.tag_id = t.id)
+         FROM tags t ORDER BY t.position, t.name COLLATE NOCASE",
+    )?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(Tag {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                color: r.get(2)?,
+                position: r.get(3)?,
+                article_count: r.get(4)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Create a tag, auto-assigning the next palette colour and list position.
+pub fn create_tag(conn: &Connection, name: &str) -> AppResult<i64> {
+    let count: i64 = conn.query_row("SELECT COUNT(*) FROM tags", [], |r| r.get(0))?;
+    let color = TAG_COLORS[(count as usize) % TAG_COLORS.len()];
+    conn.execute(
+        "INSERT INTO tags(name, color, position) VALUES (?1, ?2, ?3)",
+        params![name, color, count],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+pub fn rename_tag(conn: &Connection, id: i64, name: &str) -> AppResult<()> {
+    conn.execute("UPDATE tags SET name = ?2 WHERE id = ?1", params![id, name])?;
+    Ok(())
+}
+
+pub fn set_tag_color(conn: &Connection, id: i64, color: &str) -> AppResult<()> {
+    conn.execute("UPDATE tags SET color = ?2 WHERE id = ?1", params![id, color])?;
+    Ok(())
+}
+
+/// Persist a new tag ordering — `ids` listed in the desired display order.
+pub fn reorder_tags(conn: &Connection, ids: &[i64]) -> AppResult<()> {
+    for (pos, id) in ids.iter().enumerate() {
+        conn.execute(
+            "UPDATE tags SET position = ?2 WHERE id = ?1",
+            params![id, pos as i64],
+        )?;
+    }
+    Ok(())
+}
+
+pub fn delete_tag(conn: &Connection, id: i64) -> AppResult<()> {
+    conn.execute("DELETE FROM tags WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+/// Attach (`on = true`) or detach a tag from one article.
+pub fn set_article_tag(conn: &Connection, article_id: i64, tag_id: i64, on: bool) -> AppResult<()> {
+    if on {
+        conn.execute(
+            "INSERT INTO article_tags(article_id, tag_id) VALUES (?1, ?2)
+             ON CONFLICT DO NOTHING",
+            params![article_id, tag_id],
+        )?;
+    } else {
+        conn.execute(
+            "DELETE FROM article_tags WHERE article_id = ?1 AND tag_id = ?2",
+            params![article_id, tag_id],
+        )?;
+    }
+    Ok(())
+}
+
+/// Tags attached to one article (article_count left at 0 — unused per-article).
+pub fn tags_for_article(conn: &Connection, article_id: i64) -> AppResult<Vec<Tag>> {
+    let mut stmt = conn.prepare(
+        "SELECT t.id, t.name, t.color, t.position
+         FROM tags t JOIN article_tags at ON at.tag_id = t.id
+         WHERE at.article_id = ?1 ORDER BY t.position, t.name COLLATE NOCASE",
+    )?;
+    let rows = stmt
+        .query_map(params![article_id], |r| {
+            Ok(Tag {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                color: r.get(2)?,
+                position: r.get(3)?,
+                article_count: 0,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+// ─────────────────────────── filter rules ───────────────────────────
+
+fn row_to_rule(r: &rusqlite::Row) -> rusqlite::Result<Rule> {
+    Ok(Rule {
+        id: r.get(0)?,
+        name: r.get(1)?,
+        enabled: r.get(2)?,
+        feed_id: r.get(3)?,
+        field: r.get(4)?,
+        query: r.get(5)?,
+        action: r.get(6)?,
+        position: r.get(7)?,
+    })
+}
+
+const RULE_COLS: &str = "id, name, enabled, feed_id, field, query, action, position";
+
+/// Every rule, enabled or not, ordered for the settings list.
+pub fn list_rules(conn: &Connection) -> AppResult<Vec<Rule>> {
+    let mut stmt =
+        conn.prepare(&format!("SELECT {RULE_COLS} FROM rules ORDER BY position, id"))?;
+    let rows = stmt
+        .query_map([], row_to_rule)?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Only the enabled rules — the set evaluated against incoming articles.
+pub fn active_rules(conn: &Connection) -> AppResult<Vec<Rule>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {RULE_COLS} FROM rules WHERE enabled = 1 ORDER BY position, id"
+    ))?;
+    let rows = stmt
+        .query_map([], row_to_rule)?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+pub fn create_rule(
+    conn: &Connection,
+    name: &str,
+    feed_id: Option<i64>,
+    field: &str,
+    query: &str,
+    action: &str,
+) -> AppResult<i64> {
+    let count: i64 = conn.query_row("SELECT COUNT(*) FROM rules", [], |r| r.get(0))?;
+    conn.execute(
+        "INSERT INTO rules(name, feed_id, field, query, action, position)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![name, feed_id, field, query, action, count],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn update_rule(
+    conn: &Connection,
+    id: i64,
+    name: &str,
+    enabled: bool,
+    feed_id: Option<i64>,
+    field: &str,
+    query: &str,
+    action: &str,
+) -> AppResult<()> {
+    conn.execute(
+        "UPDATE rules SET name = ?2, enabled = ?3, feed_id = ?4,
+                          field = ?5, query = ?6, action = ?7
+         WHERE id = ?1",
+        params![id, name, enabled, feed_id, field, query, action],
+    )?;
+    Ok(())
+}
+
+pub fn delete_rule(conn: &Connection, id: i64) -> AppResult<()> {
+    conn.execute("DELETE FROM rules WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+/// Preview how a draft rule would behave: the number of *already-stored*
+/// articles its keywords match, plus a handful of recent sample titles.
+/// Lets the user sanity-check a rule before saving it.
+pub fn preview_rule(
+    conn: &Connection,
+    feed_id: Option<i64>,
+    field: &str,
+    query: &str,
+) -> AppResult<(i64, Vec<String>)> {
+    let terms: Vec<String> = query
+        .split(',')
+        .map(|t| t.trim().to_lowercase())
+        .filter(|t| !t.is_empty())
+        .collect();
+    if terms.is_empty() {
+        return Ok((0, Vec::new()));
+    }
+    let cols: &[&str] = match field {
+        "author" => &["a.author"],
+        "content" => &["a.body_text"],
+        "any" => &["a.title", "a.author", "a.body_text"],
+        _ => &["a.title"],
+    };
+    // One LIKE clause per (term × column); LIKE wildcards in the term are
+    // escaped so a literal `%` or `_` keyword can't widen the match.
+    let mut ors: Vec<String> = Vec::new();
+    let mut binds: Vec<Value> = Vec::new();
+    for term in &terms {
+        let escaped = term
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
+        for col in cols {
+            ors.push(format!("LOWER(COALESCE({col},'')) LIKE ? ESCAPE '\\'"));
+            binds.push(Value::Text(format!("%{escaped}%")));
+        }
+    }
+    let mut where_sql = format!("({})", ors.join(" OR "));
+    if let Some(fid) = feed_id {
+        where_sql.push_str(" AND a.feed_id = ?");
+        binds.push(Value::Integer(fid));
+    }
+
+    let count: i64 = conn.query_row(
+        &format!("SELECT COUNT(*) FROM articles a WHERE {where_sql}"),
+        params_from_iter(binds.iter().cloned()),
+        |r| r.get(0),
+    )?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT a.title FROM articles a WHERE {where_sql}
+         ORDER BY a.published_at DESC, a.id DESC LIMIT 5"
+    ))?;
+    let samples = stmt
+        .query_map(params_from_iter(binds), |r| r.get(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok((count, samples))
 }
 
 /// (total unread, starred, read-later) counts for the sidebar smart folders.
@@ -684,6 +1010,13 @@ pub fn reset_settings(conn: &Connection) -> AppResult<()> {
 
 pub fn count_unread(conn: &Connection) -> AppResult<i64> {
     Ok(conn.query_row("SELECT COUNT(*) FROM articles WHERE is_read = 0", [], |r| r.get(0))?)
+}
+
+/// Timestamp of the most recent successful feed fetch, if any.
+pub fn latest_fetch(conn: &Connection) -> AppResult<Option<String>> {
+    Ok(conn.query_row("SELECT MAX(last_fetched_at) FROM feeds", [], |r| {
+        r.get::<_, Option<String>>(0)
+    })?)
 }
 
 // ─────────────────────────── sync ───────────────────────────

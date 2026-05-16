@@ -192,8 +192,10 @@ export default function ArticleList({ onToast }: Props) {
     <div className="list">
       <div className="list-header" data-tauri-drag-region>
         <h1 className="list-title">
-          {/* Smart views re-translate live; feed/folder keep their own title. */}
-          {query.kind === "feed" || query.kind === "folder"
+          {/* Smart views re-translate live; feed/folder/tag keep their own title. */}
+          {query.kind === "feed" ||
+          query.kind === "folder" ||
+          query.kind === "tag"
             ? queryLabel
             : t(`smart.${query.kind}`)}
           <span className="count">{browse.isLoading ? t("common.loading") : showCount}</span>

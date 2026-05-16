@@ -9,7 +9,8 @@ export type IconName =
   | "open" | "share" | "more" | "refresh" | "settings" | "chevron-down"
   | "chevron-right" | "globe" | "focus" | "arrow-down" | "arrow-up"
   | "eye" | "eye-off" | "trash" | "mute" | "pin" | "x" | "command"
-  | "copy" | "list" | "grid" | "text";
+  | "copy" | "list" | "grid" | "text"
+  | "play" | "pause" | "skip-back" | "skip-fwd" | "headphones";
 
 interface Props {
   name: IconName;
@@ -124,6 +125,16 @@ export default function Icon({
       return <svg {...p}><rect x="3" y="3" width="8" height="8" rx="1.5" /><rect x="13" y="3" width="8" height="8" rx="1.5" /><rect x="3" y="13" width="8" height="8" rx="1.5" /><rect x="13" y="13" width="8" height="8" rx="1.5" /></svg>;
     case "text":
       return <svg {...p}><path d="M5 6h14M5 6V4.5M19 6V4.5M12 6v14M9 20h6" /></svg>;
+    case "play":
+      return <svg {...filled}><path d="M7 4.5v15l13-7.5z" /></svg>;
+    case "pause":
+      return <svg {...filled}><rect x="6" y="4.5" width="4.2" height="15" rx="1" /><rect x="13.8" y="4.5" width="4.2" height="15" rx="1" /></svg>;
+    case "skip-back":
+      return <svg {...p}><path d="M11 6a8 8 0 1 1-3 6" /><path d="M8 4v6h6" /></svg>;
+    case "skip-fwd":
+      return <svg {...p}><path d="M13 6a8 8 0 1 0 3 6" /><path d="M16 4v6h-6" /></svg>;
+    case "headphones":
+      return <svg {...p}><path d="M4 14v-2a8 8 0 0 1 16 0v2" /><rect x="2.5" y="13" width="4.5" height="7" rx="2" /><rect x="17" y="13" width="4.5" height="7" rx="2" /></svg>;
     default:
       return null;
   }

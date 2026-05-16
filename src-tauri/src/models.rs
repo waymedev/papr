@@ -59,6 +59,37 @@ pub struct Enclosure {
     pub length: Option<i64>,
 }
 
+/// A user-defined label that can be attached to any number of articles.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Tag {
+    pub id: i64,
+    pub name: String,
+    /// A palette key (resolved to a colour by the frontend).
+    pub color: String,
+    pub position: i64,
+    /// How many articles currently carry this tag.
+    pub article_count: i64,
+}
+
+/// A keyword filter applied to incoming articles at ingestion time.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Rule {
+    pub id: i64,
+    pub name: String,
+    pub enabled: bool,
+    /// `None` applies the rule to every feed; otherwise scoped to one feed.
+    pub feed_id: Option<i64>,
+    /// Which text to match: `title` | `author` | `content` | `any`.
+    pub field: String,
+    /// Comma-separated keywords; the rule fires if any one is a substring.
+    pub query: String,
+    /// What to do on a match: `skip` | `read` | `star`.
+    pub action: String,
+    pub position: i64,
+}
+
 /// A row in the article list pane. Keeps the payload small (no full HTML body).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -100,6 +131,8 @@ pub struct ArticleDetail {
     pub read_later: bool,
     pub ai_summary: Option<String>,
     pub enclosures: Vec<Enclosure>,
+    /// Tags currently attached to this article.
+    pub tags: Vec<Tag>,
 }
 
 /// Filters for the article list. Mirrors the sidebar selection in the UI.
@@ -112,6 +145,7 @@ pub enum ArticleQuery {
     ReadLater,
     Feed(i64),
     Folder(i64),
+    Tag(i64),
 }
 
 /// Live progress for a refresh run, streamed to the frontend over an ipc::Channel.

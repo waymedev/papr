@@ -14,25 +14,12 @@ mod opml;
 mod sanitize;
 mod state;
 mod sync;
+mod tray;
 
 use state::AppState;
 use std::fs;
 use std::sync::RwLock;
-use tauri::{
-    menu::{Menu, MenuItem},
-    tray::TrayIconBuilder,
-    Manager,
-};
-
-/// Localised tray-menu labels for the persisted UI language. Defaults to
-/// English (the app's fallback language) when no language has been saved yet.
-fn tray_labels(lang: &str) -> (&'static str, &'static str) {
-    match lang {
-        "zh" => ("显示 Lumen", "退出 Lumen"),
-        "ja" => ("Lumen を表示", "Lumen を終了"),
-        _ => ("Show Lumen", "Quit Lumen"),
-    }
-}
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -54,11 +41,14 @@ pub fn run() {
             let seeded = db::seed_default_feeds(&conn).unwrap_or(false);
             // The HTTP client honours the persisted proxy / timeout settings.
             let http = RwLock::new(ingestion::fetch::build_client_from_settings(&conn));
-            // The tray menu is localised to the saved UI language.
+            // Snapshot the state the tray menu needs (read before the
+            // connection moves behind the async mutex).
             let lang = db::get_setting(&conn, "language")
                 .ok()
                 .flatten()
                 .unwrap_or_default();
+            let unread = db::count_unread(&conn).unwrap_or(0);
+            let latest_fetch = db::latest_fetch(&conn).ok().flatten();
 
             app.manage(AppState {
                 db: tokio::sync::Mutex::new(conn),
@@ -80,25 +70,7 @@ pub fn run() {
             }
 
             // ── Menu-bar tray (keeps the app resident for refreshes) ──
-            let (show_label, quit_label) = tray_labels(&lang);
-            let show = MenuItem::with_id(app, "show", show_label, true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", quit_label, true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &quit])?;
-            TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("Lumen")
-                .menu(&menu)
-                .on_menu_event(|app, event| match event.id.as_ref() {
-                    "show" => {
-                        if let Some(w) = app.get_webview_window("main") {
-                            let _ = w.show();
-                            let _ = w.set_focus();
-                        }
-                    }
-                    "quit" => app.exit(0),
-                    _ => {}
-                })
-                .build(app)?;
+            tray::build(app.handle(), &lang, unread, latest_fetch.as_deref())?;
 
             // ── Background refresh scheduler ──────────────────────────
             ingestion::scheduler::spawn_scheduler(app.handle().clone());
@@ -154,6 +126,19 @@ pub fn run() {
             commands::freshrss_disconnect,
             commands::freshrss_status,
             commands::freshrss_sync,
+            commands::refresh_tray,
+            commands::list_tags,
+            commands::create_tag,
+            commands::rename_tag,
+            commands::set_tag_color,
+            commands::delete_tag,
+            commands::set_article_tag,
+            commands::reorder_tags,
+            commands::list_rules,
+            commands::create_rule,
+            commands::update_rule,
+            commands::delete_rule,
+            commands::preview_rule,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lumen");

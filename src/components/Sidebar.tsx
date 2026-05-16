@@ -4,7 +4,8 @@ import { useTranslation } from "react-i18next";
 import * as api from "../api";
 import { useUi } from "../store";
 import { errorText } from "../lib/errors";
-import type { ArticleQuery, Feed, Folder } from "../types";
+import { tagColor } from "../lib/tagColors";
+import type { ArticleQuery, Feed, Folder, Tag } from "../types";
 import Icon, { type IconName } from "./Icon";
 import ContextMenu, { type MenuEntry } from "./ContextMenu";
 import FeedAvatar from "./FeedAvatar";
@@ -24,7 +25,8 @@ const sameQuery = (a: ArticleQuery, b: ArticleQuery) =>
 
 type Menu =
   | { x: number; y: number; kind: "feed"; feed: Feed }
-  | { x: number; y: number; kind: "folder"; folder: Folder };
+  | { x: number; y: number; kind: "folder"; folder: Folder }
+  | { x: number; y: number; kind: "tag"; tag: Tag };
 
 type Prompt = {
   title: string;
@@ -74,6 +76,7 @@ export default function Sidebar({
   const feeds = useQuery({ queryKey: ["feeds"], queryFn: api.listFeeds });
   const folders = useQuery({ queryKey: ["folders"], queryFn: api.listFolders });
   const counts = useQuery({ queryKey: ["counts"], queryFn: api.smartCounts });
+  const tags = useQuery({ queryKey: ["tags"], queryFn: api.listTags });
 
   const [collapsed, setCollapsed] = useState<Record<number, boolean>>(() => {
     try {
@@ -90,6 +93,8 @@ export default function Sidebar({
   const [prompt, setPrompt] = useState<Prompt | null>(null);
   const [dragId, setDragId] = useState<number | null>(null);
   const [dropFolder, setDropFolder] = useState<number | "none" | null>(null);
+  const [tagDragId, setTagDragId] = useState<number | null>(null);
+  const [tagOverId, setTagOverId] = useState<number | null>(null);
 
   const guard = (p: Promise<unknown>, ok: string) =>
     p
@@ -101,6 +106,7 @@ export default function Sidebar({
 
   const allFeeds = feeds.data ?? [];
   const allFolders = folders.data ?? [];
+  const allTags = tags.data ?? [];
   const ungrouped = allFeeds.filter((f) => f.folderId == null);
   const isActive = (q: ArticleQuery) => sameQuery(q, query);
 
@@ -208,6 +214,55 @@ export default function Sidebar({
         guard(api.deleteFolder(folder.id), t("sidebar.toastFolderDeleted")),
     },
   ];
+
+  const tagMenu = (tag: Tag): MenuEntry[] => [
+    {
+      icon: "settings",
+      label: t("sidebar.renameMenu"),
+      onClick: () =>
+        setPrompt({
+          title: t("sidebar.renameTagTitle"),
+          initial: tag.name,
+          placeholder: t("sidebar.tagNamePlaceholder"),
+          onSubmit: (v) =>
+            guard(api.renameTag(tag.id, v), t("sidebar.toastRenamed")),
+        }),
+    },
+    { separator: true },
+    {
+      icon: "trash",
+      label: t("sidebar.deleteTag"),
+      danger: true,
+      onClick: () =>
+        guard(api.deleteTag(tag.id), t("sidebar.toastTagDeleted")),
+    },
+  ];
+
+  const createTag = () =>
+    setPrompt({
+      title: t("sidebar.newTagTitle"),
+      initial: "",
+      placeholder: t("sidebar.tagNamePlaceholder"),
+      onSubmit: (v) => guard(api.createTag(v), t("sidebar.toastTagCreated")),
+    });
+
+  // ── drag to reorder tags ──
+  const dropTag = (targetId: number) => {
+    const from = allTags.findIndex((tg) => tg.id === tagDragId);
+    const to = allTags.findIndex((tg) => tg.id === targetId);
+    setTagDragId(null);
+    setTagOverId(null);
+    if (from < 0 || to < 0 || from === to) return;
+    const next = [...allTags];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    // Optimistically reorder, then persist; reconcile on either outcome.
+    qc.setQueryData(["tags"], next);
+    api
+      .reorderTags(next.map((tg) => tg.id))
+      .catch((e) => onToast(errorText(e)))
+      .finally(() => qc.invalidateQueries({ queryKey: ["tags"] }));
+  };
 
   // ── feed row ──
   const feedRow = (f: Feed) => (
@@ -359,6 +414,64 @@ export default function Sidebar({
           );
         })}
 
+        <div className="sb-section-title">
+          <span>{t("sidebar.tags")}</span>
+          <button onClick={createTag} title={t("sidebar.newTagTitle")}>
+            <Icon name="plus" size={12} />
+          </button>
+        </div>
+        {allTags.length === 0 && (
+          <div
+            style={{
+              padding: "4px 12px 2px",
+              fontSize: 11.5,
+              color: "var(--muted)",
+              lineHeight: 1.5,
+            }}
+          >
+            {t("sidebar.tagsEmptyHint")}
+          </div>
+        )}
+        {allTags.map((tag) => (
+          <div
+            key={tag.id}
+            className={`sb-item ${
+              isActive({ kind: "tag", value: tag.id }) ? "active" : ""
+            } ${tagDragId === tag.id ? "dragging" : ""} ${
+              tagOverId === tag.id ? "drop-above" : ""
+            }`}
+            draggable
+            onDragStart={() => setTagDragId(tag.id)}
+            onDragEnd={() => {
+              setTagDragId(null);
+              setTagOverId(null);
+            }}
+            onDragOver={(e) => {
+              if (tagDragId != null && tagDragId !== tag.id) {
+                e.preventDefault();
+                setTagOverId(tag.id);
+              }
+            }}
+            onDrop={() => dropTag(tag.id)}
+            onClick={() => select({ kind: "tag", value: tag.id }, tag.name)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setMenu({ x: e.clientX, y: e.clientY, kind: "tag", tag });
+            }}
+          >
+            <span className="sb-ico">
+              <span
+                className="tag-dot"
+                style={{ background: tagColor(tag.color) }}
+              />
+            </span>
+            <span className="sb-label">{tag.name}</span>
+            {showCounts && tag.articleCount > 0 && (
+              <span className="sb-count">{tag.articleCount}</span>
+            )}
+          </div>
+        ))}
+
         <div style={{ height: 30 }} />
       </div>
 
@@ -390,7 +503,13 @@ export default function Sidebar({
         <ContextMenu
           x={menu.x}
           y={menu.y}
-          items={menu.kind === "feed" ? feedMenu(menu.feed) : folderMenu(menu.folder)}
+          items={
+            menu.kind === "feed"
+              ? feedMenu(menu.feed)
+              : menu.kind === "folder"
+                ? folderMenu(menu.folder)
+                : tagMenu(menu.tag)
+          }
           onClose={() => setMenu(null)}
         />
       )}

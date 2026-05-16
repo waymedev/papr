@@ -12,6 +12,19 @@
     "loading": "Loading…",
     "justNow": "just now"
   },
+  "tagPicker": {
+    "title": "Tag this article",
+    "empty": "No tags yet — create one below.",
+    "createPlaceholder": "New tag…"
+  },
+  "player": {
+    "play": "Play",
+    "pause": "Pause",
+    "back15": "Back 15s",
+    "fwd30": "Forward 30s",
+    "speed": "Playback speed",
+    "close": "Close player"
+  },
   "smart": {
     "all": "All Articles",
     "unread": "Unread",
@@ -97,8 +110,11 @@
     "tbExtractFullText": "Extract full text",
     "tbCopyLink": "Copy link",
     "tbShare": "Share",
+    "tbTags": "Tags",
     "tbFocusMode": "Focus mode (F)",
     "tbOpenInBrowser": "Open in browser (⌘O)",
+    "episodePlay": "Play episode",
+    "episodePlaying": "Now playing",
     "readMinutes": "{{count}} min read",
     "extractingFullText": "Extracting full text…",
     "noContent": "No content available.",
@@ -114,6 +130,7 @@
       "appearance": "Appearance",
       "reading": "Reading",
       "subscriptions": "Subscriptions",
+      "filters": "Filters",
       "sync": "Sync",
       "shortcuts": "Shortcuts",
       "notifications": "Notifications",
@@ -125,6 +142,7 @@
       "appearance": "Theme, accent color, density",
       "reading": "Body font, font size, layout",
       "subscriptions": "{{count}} feeds",
+      "filters": "Keyword rules for incoming articles",
       "sync": "Cloud sync and third-party services",
       "shortcuts": "Keyboard shortcuts",
       "notifications": "New article alerts and badges",
@@ -204,6 +222,37 @@
       "opmlExported": "OPML exported to the Downloads folder",
       "opmlImported": "Imported {{count}} feeds from OPML",
       "unsubscribed": "Unsubscribed from {{title}}"
+    },
+    "filters": {
+      "title": "Filter rules",
+      "intro": "Rules run on every new article as it arrives. Skip noisy keywords, or auto mark-read / star the things you care about.",
+      "newRule": "New rule",
+      "empty": "No rules yet.",
+      "untitled": "Untitled rule",
+      "saved": "Rule saved",
+      "deleted": "Rule deleted",
+      "needQuery": "Enter at least one keyword",
+      "namePlaceholder": "Rule name (optional)",
+      "queryPlaceholder": "Keywords, comma-separated",
+      "matchIn": "Match in",
+      "thenLabel": "Then",
+      "scopeLabel": "Applies to",
+      "allFeeds": "All feeds",
+      "field": {
+        "title": "title",
+        "author": "author",
+        "content": "content",
+        "any": "anywhere"
+      },
+      "action": {
+        "skip": "Skip",
+        "read": "Mark read",
+        "star": "Star"
+      },
+      "preview": {
+        "checking": "Checking…",
+        "count": "Matches {{count}} existing articles"
+      }
     },
     "sync": {
       "freshrss": "FreshRSS Sync",
@@ -355,7 +404,15 @@
     "toastMarkedAllRead": "Marked all as read",
     "toastRenamed": "Renamed",
     "toastUnsubscribed": "Unsubscribed {{feed}}",
-    "toastFolderDeleted": "Folder deleted"
+    "toastFolderDeleted": "Folder deleted",
+    "tags": "Tags",
+    "newTagTitle": "New tag",
+    "renameTagTitle": "Rename tag",
+    "tagNamePlaceholder": "Tag name",
+    "deleteTag": "Delete tag",
+    "tagsEmptyHint": "Tag articles while reading to group them here.",
+    "toastTagCreated": "Tag created",
+    "toastTagDeleted": "Tag deleted"
   },
   "error": {
     "db": "Database error: {{detail}}",
@@ -366,6 +423,8 @@
     "other": "{{detail}}",
     "unknown": "An unknown error occurred",
     "noAiKey": "No AI API key set — add one in Settings → Advanced",
+    "emptyTagName": "Tag name can't be empty",
+    "emptyRuleQuery": "Enter at least one keyword for the rule",
     "noFeedFound": "No feed found at that URL",
     "alreadySubscribed": "You are already subscribed to this feed",
     "noArticleUrl": "This article has no source URL",

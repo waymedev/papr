@@ -28,6 +28,34 @@ export interface Enclosure {
   length: number | null;
 }
 
+export interface Tag {
+  id: number;
+  name: string;
+  color: string;
+  position: number;
+  articleCount: number;
+}
+
+export type RuleField = "title" | "author" | "content" | "any";
+export type RuleAction = "skip" | "read" | "star";
+
+/** Dry-run result for a draft filter rule (see preview_rule command). */
+export interface RulePreview {
+  count: number;
+  samples: string[];
+}
+
+export interface Rule {
+  id: number;
+  name: string;
+  enabled: boolean;
+  feedId: number | null;
+  field: RuleField;
+  query: string;
+  action: RuleAction;
+  position: number;
+}
+
 export interface ArticleSummary {
   id: number;
   feedId: number;
@@ -61,6 +89,7 @@ export interface ArticleDetail {
   readLater: boolean;
   aiSummary: string | null;
   enclosures: Enclosure[];
+  tags: Tag[];
 }
 
 export interface SmartCounts {
@@ -76,7 +105,8 @@ export type ArticleQuery =
   | { kind: "starred" }
   | { kind: "readLater" }
   | { kind: "feed"; value: number }
-  | { kind: "folder"; value: number };
+  | { kind: "folder"; value: number }
+  | { kind: "tag"; value: number };
 
 export type AiEvent =
   | { type: "delta"; data: string }
