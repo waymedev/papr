@@ -56,9 +56,10 @@ export default function AddFeedDialog({ onClose, onToast }: Props) {
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
+        aria-labelledby="addfeed-dialog-title"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2>{t("addFeed.title")}</h2>
+        <h2 id="addfeed-dialog-title">{t("addFeed.title")}</h2>
         <p className="modal-hint">{t("addFeed.hint")}</p>
         <input
           className="modal-input"

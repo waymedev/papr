@@ -80,6 +80,7 @@ export default function SettingsDialog({
         ref={windowRef}
         role="dialog"
         aria-modal="true"
+        aria-label={t("settings.title")}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="settings-sidebar">

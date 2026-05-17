@@ -59,9 +59,10 @@ export default function PromptDialog({
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
+        aria-labelledby="prompt-dialog-title"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2>{title}</h2>
+        <h2 id="prompt-dialog-title">{title}</h2>
         <input
           className="modal-input"
           ref={inputRef}
