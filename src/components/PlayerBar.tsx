@@ -6,12 +6,17 @@ import Icon from "./Icon";
 
 const RATES = [0.75, 1, 1.25, 1.5, 2];
 
-/** mm:ss for a seconds value; "–:––" while the duration is unknown. */
+/** m:ss for a seconds value, or h:mm:ss past an hour (podcasts run long);
+ *  "–:––" while the duration is unknown. */
 function clock(s: number): string {
   if (!isFinite(s) || s < 0) return "–:––";
-  const m = Math.floor(s / 60);
-  const sec = Math.floor(s % 60);
-  return `${m}:${sec.toString().padStart(2, "0")}`;
+  const total = Math.floor(s);
+  const sec = (total % 60).toString().padStart(2, "0");
+  const min = Math.floor(total / 60) % 60;
+  const hr = Math.floor(total / 3600);
+  return hr > 0
+    ? `${hr}:${min.toString().padStart(2, "0")}:${sec}`
+    : `${min}:${sec}`;
 }
 
 /**
