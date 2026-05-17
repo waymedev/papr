@@ -470,6 +470,10 @@ export default function Reader({ onToast }: Props) {
       </div>
 
       <AIDrawer
+        // Keyed by article id so switching articles remounts the drawer:
+        // its `text` state then re-initialises from the new article's
+        // summary, rather than carrying the previous one's across.
+        key={a.id}
         open={aiOpen}
         article={a}
         onClose={() => setAiOpen(false)}
@@ -503,17 +507,13 @@ function AIDrawer({
 }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
+  // Initialised from the article's stored summary (if any). The parent keys
+  // this component by article id, so a switch remounts it and re-runs this
+  // initialiser — no separate "reset on article change" effect is needed.
   const [text, setText] = useState<string | null>(article.aiSummary);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const [retry, setRetry] = useState(0);
-
-  // Reset to whatever the article already has when switching articles.
-  useEffect(() => {
-    setText(article.aiSummary);
-    setBusy(false);
-    setFailed(false);
-  }, [article.id]);
 
   // Generate a summary the first time the drawer opens for an article, and
   // again whenever the user hits Retry. `failed` is in the guard so a failed
