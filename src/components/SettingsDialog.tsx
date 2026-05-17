@@ -1627,14 +1627,21 @@ function RuleEditor({
     }
     setPreviewing(true);
     const feedId = scope === "" ? null : Number(scope);
+    // `cancelled` guards against a stale response: a request started before
+    // the draft changed could otherwise resolve last and overwrite the
+    // preview for the current draft.
+    let cancelled = false;
     const handle = window.setTimeout(() => {
       api
         .previewRule(feedId, field, q)
-        .then(setPreview)
-        .catch(() => setPreview(null))
-        .finally(() => setPreviewing(false));
+        .then((r) => !cancelled && setPreview(r))
+        .catch(() => !cancelled && setPreview(null))
+        .finally(() => !cancelled && setPreviewing(false));
     }, 400);
-    return () => window.clearTimeout(handle);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
   }, [query, field, scope]);
 
   const save = async () => {
