@@ -21,3 +21,22 @@ A fast, native RSS reader for the desktop.
 - **FreshRSS sync** — keep read state in step with a FreshRSS server.
 - **Local-first** — everything in a local SQLite database. No account, no cloud.
 - **Localized** — English, Japanese, and Simplified Chinese.
+
+## Installation
+
+Grab the installer for your platform from the [latest release](https://github.com/l0ng-ai/papr/releases/latest).
+
+### macOS
+
+The macOS build is not yet signed or notarized with an Apple Developer
+certificate, so Gatekeeper will report **“Papr is damaged and can't be
+opened”**. The app is not actually damaged — macOS just refuses to run
+unsigned apps that still carry the download quarantine flag.
+
+After dragging Papr into `/Applications`, clear the flag once:
+
+```bash
+xattr -cr /Applications/Papr.app
+```
+
+Then open it normally. Signed, notarized builds are planned.
