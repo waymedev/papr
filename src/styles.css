@@ -691,17 +691,6 @@ button { font-family: inherit; }
   line-height: 1.6;
   color: var(--ink-2);
 }
-.ai-section { margin-bottom: 22px; }
-.ai-section h4 {
-  margin: 0 0 8px;
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.ai-section ul { padding-left: 18px; margin: 0; }
-.ai-section li { margin: 5px 0; }
 .ai-loading {
   display: inline-flex;
   align-items: center;
