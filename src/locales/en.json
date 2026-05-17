@@ -37,6 +37,8 @@
   "addFeed": {
     "title": "Add feed",
     "hint": "Paste a feed URL, or any website URL — Papr will discover its RSS automatically.",
+    "urlLabel": "Feed or site URL",
+    "folderLabel": "Folder",
     "noFolder": "No folder",
     "subscribe": "Subscribe",
     "adding": "Adding…",

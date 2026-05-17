@@ -69,6 +69,7 @@ export default function PromptDialog({
           autoFocus
           value={value}
           placeholder={placeholder}
+          aria-label={placeholder ?? title}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") submit();

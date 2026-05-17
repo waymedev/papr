@@ -231,6 +231,7 @@ export default function CommandPalette({
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKey}
             placeholder={t("commandPalette.searchPlaceholder")}
+            aria-label={t("commandPalette.searchPlaceholder")}
             role="combobox"
             aria-expanded={items.length > 0}
             aria-controls="cp-listbox"

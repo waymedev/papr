@@ -37,6 +37,8 @@
   "addFeed": {
     "title": "添加订阅源",
     "hint": "粘贴一个订阅源地址，或任意网站地址 — Papr 会自动发现它的 RSS。",
+    "urlLabel": "订阅源或网站地址",
+    "folderLabel": "文件夹",
     "noFolder": "不归入文件夹",
     "subscribe": "订阅",
     "adding": "添加中…",

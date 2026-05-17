@@ -131,6 +131,7 @@ export default function TagPicker({
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && createAndAttach()}
           placeholder={t("tagPicker.createPlaceholder")}
+          aria-label={t("tagPicker.createPlaceholder")}
         />
         <button onClick={createAndAttach} disabled={!draft.trim()}>
           <Icon name="plus" size={13} />

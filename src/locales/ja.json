@@ -37,6 +37,8 @@
   "addFeed": {
     "title": "フィードを追加",
     "hint": "フィードURL、または任意のウェブサイトURLを貼り付けてください — PaprがRSSを自動で検出します。",
+    "urlLabel": "フィードまたはサイトの URL",
+    "folderLabel": "フォルダ",
     "noFolder": "フォルダなし",
     "subscribe": "購読",
     "adding": "追加中…",

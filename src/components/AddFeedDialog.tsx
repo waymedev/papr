@@ -66,6 +66,7 @@ export default function AddFeedDialog({ onClose, onToast }: Props) {
           type="text"
           autoFocus
           placeholder="https://example.com"
+          aria-label={t("addFeed.urlLabel")}
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           onKeyDown={(e) => {
@@ -76,6 +77,7 @@ export default function AddFeedDialog({ onClose, onToast }: Props) {
           <select
             className="s-select"
             style={{ width: "100%" }}
+            aria-label={t("addFeed.folderLabel")}
             value={folderId ?? ""}
             onChange={(e) =>
               setFolderId(e.target.value ? Number(e.target.value) : null)
