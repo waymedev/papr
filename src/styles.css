@@ -1576,6 +1576,75 @@ button { font-family: inherit; }
   display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px;
 }
 
+/* Source-type tabs in the Add-feed dialog (feature F5). A quiet segmented
+   control reusing the modal's panel / hairline tokens. */
+.seg {
+  display: flex; gap: 2px; padding: 2px;
+  background: var(--panel); border: 1px solid var(--hair-strong);
+  border-radius: 8px;
+}
+.seg-btn {
+  flex: 1; font-family: var(--ui); font-size: 12.5px; font-weight: 500;
+  color: var(--ink-soft, var(--ink)); background: transparent;
+  border: 0; border-radius: 6px; padding: 6px 8px; cursor: pointer;
+}
+.seg-btn.active {
+  color: var(--ink); background: var(--bg, var(--panel));
+  box-shadow: 0 1px 2px oklch(0 0 0 / 0.08);
+}
+
+/* Feed discovery results in the Add-feed dialog (feature F6). */
+.discover-results {
+  max-height: 248px;
+  overflow-y: auto;
+  border: 1px solid var(--hair-strong);
+  border-radius: 8px;
+  background: var(--panel);
+  margin-bottom: 10px;
+}
+.discover-empty {
+  padding: 16px 12px;
+  font-size: 12.5px;
+  color: var(--muted);
+  text-align: center;
+}
+.discover-group { padding: 4px 0; }
+.discover-group + .discover-group { border-top: 1px solid var(--hair); }
+.discover-group-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 6px 12px 2px;
+}
+.discover-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px 6px 12px;
+}
+.discover-row:hover { background: var(--hover); }
+.discover-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.discover-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.discover-desc {
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+.discover-url { font-family: var(--mono); font-size: 11px; }
+.discover-add { padding: 4px 9px; font-size: 11.5px; flex-shrink: 0; }
+
 /* reduce-motion — honoured both for the in-app preference and, by default,
    for the OS-level setting (macOS "Reduce Motion" etc.). */
 [data-reduce-motion="true"] *,
@@ -1934,3 +2003,121 @@ button { font-family: inherit; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ====== Highlights / annotations (feature F7) ====== */
+
+/* Persisted highlight marks laid over the article body. */
+.article-body mark[data-hl] {
+  color: inherit;
+  padding: 0.05em 0;
+  transition: filter 0.12s ease;
+}
+.article-body mark[data-hl]:hover { filter: brightness(0.94); }
+/* A highlight carrying a note gets a small dotted underline affordance. */
+.article-body mark[data-hl][data-note] {
+  border-bottom: 1.5px dotted var(--ink-2);
+}
+
+/* Floating colour toolbar shown over a fresh text selection. */
+.hl-toolbar {
+  position: fixed;
+  z-index: 210;
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--hair-strong);
+  border-radius: 9px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+  animation: cp-pop 0.12s ease;
+}
+
+.hl-swatch {
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  outline: 1.5px solid transparent;
+  outline-offset: 2px;
+  transition: transform 0.1s ease;
+}
+.hl-swatch:hover { transform: scale(1.15); }
+.hl-swatch.active { outline-color: var(--ink-2); }
+.hl-swatch:focus-visible { outline-color: var(--accent); }
+
+/* Popover for editing / deleting an existing highlight. */
+.hl-popover {
+  position: fixed;
+  z-index: 210;
+  width: 280px;
+  background: var(--panel-2);
+  border: 1px solid var(--hair-strong);
+  border-radius: 11px;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.2);
+  padding: 12px;
+  animation: cp-pop 0.12s ease;
+}
+.hl-quote {
+  margin: 0 0 10px;
+  padding: 6px 10px;
+  border-left: 3px solid var(--accent);
+  background: var(--panel);
+  border-radius: 0 6px 6px 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  max-height: 96px;
+  overflow-y: auto;
+}
+.hl-swatch-row { display: flex; gap: 7px; margin-bottom: 10px; }
+.hl-note-input {
+  width: 100%;
+  min-height: 64px;
+  resize: vertical;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid var(--hair-strong);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--ink);
+}
+.hl-note-input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+.hl-popover-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* Export menu — reuses .ctx-menu; the trigger button needs a relative wrap. */
+.hl-export-wrap { position: relative; display: inline-flex; }
+.hl-export-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 232px;
+}
+.hl-export-head {
+  padding: 6px 10px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+/* The export menu uses <button> for its rows — reset the native chrome. */
+.hl-export-menu .ctx-item {
+  width: 100%;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+}
+.hl-export-menu .ctx-item:disabled { opacity: 0.5; cursor: default; }

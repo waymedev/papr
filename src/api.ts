@@ -6,13 +6,19 @@ import type {
   ArticleDetail,
   ArticleQuery,
   ArticleSummary,
+  DiscoveryResult,
   Feed,
   Folder,
+  Highlight,
+  NewsletterInput,
+  NewsletterSource,
   RefreshProgress,
   Rule,
   RuleAction,
   RuleField,
   RulePreview,
+  ShareTarget,
+  ShareTargets,
   SmartCounts,
   Tag,
 } from "./types";
@@ -30,6 +36,9 @@ export const deleteFolder = (id: number) =>
 export const listFeeds = () => invoke<Feed[]>("list_feeds");
 export const addFeed = (url: string, folderId: number | null) =>
   invoke<Feed>("add_feed", { url, folderId });
+/** Discover feeds matching a query — curated directory + live page scrape. */
+export const searchFeedDirectory = (query: string) =>
+  invoke<DiscoveryResult[]>("search_feed_directory", { query });
 export const deleteFeed = (id: number) => invoke<void>("delete_feed", { id });
 export const moveFeed = (id: number, folderId: number | null) =>
   invoke<void>("move_feed", { id, folderId });
@@ -196,3 +205,55 @@ export const previewRule = (
   field: RuleField,
   query: string,
 ) => invoke<RulePreview>("preview_rule", { feedId, field, query });
+
+// ── highlights / annotations (F7) ──
+export interface NewHighlight {
+  articleId: number;
+  quote: string;
+  prefix: string;
+  suffix: string;
+  textOffset: number;
+  color: string;
+  note: string;
+}
+export const createHighlight = (h: NewHighlight) =>
+  invoke<number>("create_highlight", { ...h });
+export const listHighlights = (articleId: number) =>
+  invoke<Highlight[]>("list_highlights", { articleId });
+export const listAllHighlights = () =>
+  invoke<Highlight[]>("list_all_highlights");
+export const updateHighlightNote = (id: number, note: string) =>
+  invoke<void>("update_highlight_note", { id, note });
+export const setHighlightColor = (id: number, color: string) =>
+  invoke<void>("set_highlight_color", { id, color });
+export const deleteHighlight = (id: number) =>
+  invoke<void>("delete_highlight", { id });
+
+// ── highlight export (F7) ──
+/** Markdown document for an article's highlights (copy / save targets). */
+export const exportHighlightsMarkdown = (articleId: number) =>
+  invoke<string>("export_highlights_markdown", { articleId });
+/** Write the Markdown note into the configured Obsidian vault folder. */
+export const exportHighlightsToObsidian = (articleId: number) =>
+  invoke<string>("export_highlights_to_obsidian", { articleId });
+/** POST the article's highlights to Readwise; returns the count sent. */
+export const exportHighlightsToReadwise = (articleId: number) =>
+  invoke<number>("export_highlights_to_readwise", { articleId });
+/** Append the article's highlights to the configured Notion page. */
+export const exportHighlightsToNotion = (articleId: number) =>
+  invoke<number>("export_highlights_to_notion", { articleId });
+
+// ── "Send to…" share integrations (F8) ──
+/** Which share targets currently have complete credentials configured. */
+export const shareTargets = () => invoke<ShareTargets>("share_targets");
+/** Send an article to a read-later / archive / note service. */
+export const sendArticle = (articleId: number, target: ShareTarget) =>
+  invoke<void>("send_article", { articleId, target });
+
+// ── newsletter sources (IMAP-polled email newsletters) ──
+export const addNewsletterSource = (input: NewsletterInput) =>
+  invoke<Feed>("add_newsletter_source", { input });
+export const listNewsletterSources = () =>
+  invoke<NewsletterSource[]>("list_newsletter_sources");
+export const removeNewsletterSource = (feedId: number) =>
+  invoke<void>("remove_newsletter_source", { feedId });

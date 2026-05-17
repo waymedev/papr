@@ -1,6 +1,44 @@
 // Type mirrors of the Rust domain model (see src-tauri/src/models.rs).
 
-export type SourceType = "rss" | "youtube" | "podcast" | "mastodon" | "bluesky";
+export type SourceType =
+  | "rss"
+  | "youtube"
+  | "podcast"
+  | "mastodon"
+  | "bluesky"
+  | "reddit"
+  | "newsletter";
+
+/** A configured email-newsletter source (mirrors commands::NewsletterSource). */
+export interface NewsletterSource {
+  feedId: number;
+  title: string;
+  host: string;
+  port: number;
+  username: string;
+  folder: string;
+}
+
+/** Payload for add_newsletter_source (mirrors commands::NewsletterInput). */
+export interface NewsletterInput {
+  title: string | null;
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+  folder: string;
+}
+
+/** A feed-discovery result (mirrors discovery::DiscoveryResult). */
+export interface DiscoveryResult {
+  title: string;
+  feedUrl: string;
+  siteUrl: string | null;
+  category: string | null;
+  description: string | null;
+  /** true → curated directory entry, false → live page scrape. */
+  fromDirectory: boolean;
+}
 
 export interface Folder {
   id: number;
@@ -98,6 +136,19 @@ export interface SmartCounts {
   readLater: number;
 }
 
+/** A user highlight / annotation (mirrors models::Highlight). */
+export interface Highlight {
+  id: number;
+  articleId: number;
+  quote: string;
+  prefix: string;
+  suffix: string;
+  textOffset: number;
+  color: string;
+  note: string;
+  createdAt: string;
+}
+
 // Mirrors the adjacently-tagged Rust `ArticleQuery` enum.
 export type ArticleQuery =
   | { kind: "all" }
@@ -107,6 +158,17 @@ export type ArticleQuery =
   | { kind: "feed"; value: number }
   | { kind: "folder"; value: number }
   | { kind: "tag"; value: number };
+
+/** A "Send to…" share target (mirrors commands::ShareTarget — F8). */
+export type ShareTarget = "pocket" | "instapaper" | "kindle" | "notion";
+
+/** Which share targets have complete credentials (mirrors commands::ShareTargets). */
+export interface ShareTargets {
+  pocket: boolean;
+  instapaper: boolean;
+  kindle: boolean;
+  notion: boolean;
+}
 
 export type AiEvent =
   | { type: "delta"; data: string }

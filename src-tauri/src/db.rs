@@ -160,6 +160,47 @@ static MIGRATIONS: LazyLock<Migrations> = LazyLock::new(|| {
         // the dedup check tests URL existence per inserted article; both
         // full-scanned the table without this.
         M::up("CREATE INDEX idx_articles_url ON articles(url);"),
+        // v10 — email-newsletter sources (feature F5). A newsletter is a
+        // normal `feeds` row (source_type = 'newsletter') so it lists,
+        // searches and retains like an RSS feed; this side-table holds the
+        // IMAP connection details, keyed 1:1 by feed_id and cascade-deleted
+        // with the feed. The app-password is stored in plaintext, the same
+        // way FreshRSS sync credentials live in the `settings` table — the
+        // database never leaves the user's machine.
+        M::up(
+            r#"
+            CREATE TABLE newsletter_sources (
+                feed_id   INTEGER PRIMARY KEY REFERENCES feeds(id) ON DELETE CASCADE,
+                host      TEXT NOT NULL,
+                port      INTEGER NOT NULL DEFAULT 993,
+                username  TEXT NOT NULL,
+                password  TEXT NOT NULL,
+                folder    TEXT NOT NULL DEFAULT 'INBOX'
+            );
+            "#,
+        ),
+        // v11 — highlights / annotations layer (feature F7). Each highlight
+        // pins a span of an article's rendered plain text. `text_offset` is
+        // the character offset of the quote, and `prefix` / `suffix` carry a
+        // short context window for robust re-anchoring when the rendered text
+        // shifts (e.g. after full-text extraction replaces a feed snippet).
+        // `note` is an optional user annotation; `color` is a palette key.
+        M::up(
+            r#"
+            CREATE TABLE highlights (
+                id          INTEGER PRIMARY KEY,
+                article_id  INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+                quote       TEXT NOT NULL,
+                prefix      TEXT NOT NULL DEFAULT '',
+                suffix      TEXT NOT NULL DEFAULT '',
+                text_offset INTEGER NOT NULL DEFAULT 0,
+                color       TEXT NOT NULL DEFAULT 'yellow',
+                note        TEXT NOT NULL DEFAULT '',
+                created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX idx_highlights_article ON highlights(article_id);
+            "#,
+        ),
     ])
 });
 
@@ -280,9 +321,14 @@ pub fn list_feeds(conn: &Connection) -> AppResult<Vec<Feed>> {
 /// the last two are the stored revalidators for a conditional GET.
 pub type FeedToRefresh = (i64, String, Option<String>, Option<String>);
 
-/// All feeds that need fetching.
+/// All feeds that need an HTTP fetch. Newsletter sources are excluded — they
+/// are polled over IMAP separately (see `scheduler::poll_newsletters`); their
+/// synthetic `imap://` feed_url is not an HTTP-fetchable document.
 pub fn feeds_to_refresh(conn: &Connection) -> AppResult<Vec<FeedToRefresh>> {
-    let mut stmt = conn.prepare("SELECT id, feed_url, etag, last_modified FROM feeds")?;
+    let mut stmt = conn.prepare(
+        "SELECT id, feed_url, etag, last_modified FROM feeds
+         WHERE source_type != 'newsletter'",
+    )?;
     let rows = stmt
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
         .collect::<Result<Vec<_>, _>>()?;
@@ -382,6 +428,99 @@ pub fn move_feed(conn: &Connection, id: i64, folder_id: Option<i64>) -> AppResul
 
 pub fn rename_feed(conn: &Connection, id: i64, title: &str) -> AppResult<()> {
     conn.execute("UPDATE feeds SET title = ?2 WHERE id = ?1", params![id, title])?;
+    Ok(())
+}
+
+// ─────────────────────────── newsletter sources ───────────────────────────
+
+/// One configured email-newsletter source: the backing feed plus its IMAP
+/// connection details. Mirrors the `commands::NewsletterSource` payload.
+pub struct NewsletterSourceRow {
+    pub feed_id: i64,
+    pub title: String,
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub folder: String,
+}
+
+/// Insert a newsletter source: a `feeds` row (source_type = 'newsletter') plus
+/// its IMAP credentials in `newsletter_sources`. Both land in one transaction
+/// so a failure cannot leave a feed with no credentials. Returns the feed id.
+pub fn insert_newsletter_source(
+    conn: &Connection,
+    feed_url: &str,
+    title: &str,
+    host: &str,
+    port: u16,
+    username: &str,
+    password: &str,
+    folder: &str,
+) -> AppResult<i64> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute(
+        "INSERT INTO feeds(feed_url, title, source_type) VALUES (?1, ?2, 'newsletter')",
+        params![feed_url, title],
+    )?;
+    let feed_id = tx.last_insert_rowid();
+    tx.execute(
+        "INSERT INTO newsletter_sources(feed_id, host, port, username, password, folder)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![feed_id, host, port, username, password, folder],
+    )?;
+    tx.commit()?;
+    Ok(feed_id)
+}
+
+/// Every configured newsletter source (without the password) for the UI list.
+pub fn list_newsletter_sources(conn: &Connection) -> AppResult<Vec<NewsletterSourceRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT n.feed_id, f.title, n.host, n.port, n.username, n.folder
+         FROM newsletter_sources n JOIN feeds f ON f.id = n.feed_id
+         ORDER BY f.title COLLATE NOCASE",
+    )?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(NewsletterSourceRow {
+                feed_id: r.get(0)?,
+                title: r.get(1)?,
+                host: r.get(2)?,
+                port: r.get::<_, i64>(3)? as u16,
+                username: r.get(4)?,
+                folder: r.get(5)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// `(feed_id, host, port, username, password, folder)` for every newsletter
+/// source — the work list the refresh scheduler polls each cycle.
+pub fn newsletter_sources_to_poll(
+    conn: &Connection,
+) -> AppResult<Vec<(i64, String, u16, String, String, String)>> {
+    let mut stmt = conn.prepare(
+        "SELECT feed_id, host, port, username, password, folder FROM newsletter_sources",
+    )?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)? as u16,
+                r.get::<_, String>(3)?,
+                r.get::<_, String>(4)?,
+                r.get::<_, String>(5)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Remove a newsletter source. Deleting the `feeds` row cascades to both
+/// `newsletter_sources` and the source's articles.
+pub fn delete_newsletter_source(conn: &Connection, feed_id: i64) -> AppResult<()> {
+    conn.execute("DELETE FROM feeds WHERE id = ?1", params![feed_id])?;
     Ok(())
 }
 
@@ -1053,6 +1192,102 @@ pub fn smart_counts(conn: &Connection) -> AppResult<(i64, i64, i64)> {
     )?)
 }
 
+// ─────────────────────────── highlights ───────────────────────────
+
+const HIGHLIGHT_COLS: &str =
+    "id, article_id, quote, prefix, suffix, text_offset, color, note, created_at";
+
+fn row_to_highlight(r: &rusqlite::Row) -> rusqlite::Result<Highlight> {
+    Ok(Highlight {
+        id: r.get(0)?,
+        article_id: r.get(1)?,
+        quote: r.get(2)?,
+        prefix: r.get(3)?,
+        suffix: r.get(4)?,
+        text_offset: r.get(5)?,
+        color: r.get(6)?,
+        note: r.get(7)?,
+        created_at: r.get(8)?,
+    })
+}
+
+/// Insert a highlight and return its new id.
+pub fn insert_highlight(
+    conn: &Connection,
+    article_id: i64,
+    quote: &str,
+    prefix: &str,
+    suffix: &str,
+    text_offset: i64,
+    color: &str,
+    note: &str,
+) -> AppResult<i64> {
+    conn.execute(
+        "INSERT INTO highlights(article_id, quote, prefix, suffix, text_offset, color, note)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![article_id, quote, prefix, suffix, text_offset, color, note],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+/// All highlights for one article, oldest first (their reading order).
+pub fn list_highlights(conn: &Connection, article_id: i64) -> AppResult<Vec<Highlight>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {HIGHLIGHT_COLS} FROM highlights
+         WHERE article_id = ?1 ORDER BY text_offset, id"
+    ))?;
+    let rows = stmt
+        .query_map(params![article_id], row_to_highlight)?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Every highlight across all articles — used by the Highlights browser.
+pub fn list_all_highlights(conn: &Connection) -> AppResult<Vec<Highlight>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {HIGHLIGHT_COLS} FROM highlights ORDER BY created_at DESC, id DESC"
+    ))?;
+    let rows = stmt
+        .query_map([], row_to_highlight)?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Fetch one highlight by id, if it exists.
+#[allow(dead_code)] // exercised by the db tests; kept as a complete CRUD API.
+pub fn get_highlight(conn: &Connection, id: i64) -> AppResult<Option<Highlight>> {
+    Ok(conn
+        .query_row(
+            &format!("SELECT {HIGHLIGHT_COLS} FROM highlights WHERE id = ?1"),
+            params![id],
+            row_to_highlight,
+        )
+        .optional()?)
+}
+
+/// Replace a highlight's note text (an empty string clears it).
+pub fn update_highlight_note(conn: &Connection, id: i64, note: &str) -> AppResult<()> {
+    conn.execute(
+        "UPDATE highlights SET note = ?2 WHERE id = ?1",
+        params![id, note],
+    )?;
+    Ok(())
+}
+
+/// Change a highlight's colour (a palette key).
+pub fn set_highlight_color(conn: &Connection, id: i64, color: &str) -> AppResult<()> {
+    conn.execute(
+        "UPDATE highlights SET color = ?2 WHERE id = ?1",
+        params![id, color],
+    )?;
+    Ok(())
+}
+
+pub fn delete_highlight(conn: &Connection, id: i64) -> AppResult<()> {
+    conn.execute("DELETE FROM highlights WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
 // ─────────────────────────── settings ───────────────────────────
 
 pub fn get_setting(conn: &Connection, key: &str) -> AppResult<Option<String>> {
@@ -1239,4 +1474,111 @@ pub fn requeue_sync(conn: &Connection, article_id: i64, field: &str, value: bool
         params![article_id, field, value],
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An in-memory database with all migrations applied and one feed +
+    /// article inserted, so highlight FKs resolve. Returns `(conn, article_id)`.
+    fn test_db() -> (Connection, i64) {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        MIGRATIONS.to_latest(&mut conn).unwrap();
+        let feed_id = insert_feed(
+            &conn,
+            "https://example.com/feed.xml",
+            None,
+            "Example Feed",
+            None,
+            SourceType::Rss,
+            None,
+        )
+        .unwrap();
+        let article = NewArticle {
+            guid: "g1".into(),
+            url: Some("https://example.com/a1".into()),
+            title: "An Article".into(),
+            author: None,
+            summary: None,
+            content_html: Some("<p>body</p>".into()),
+            body_text: "body".into(),
+            image_url: None,
+            published_at: None,
+            enclosures: Vec::new(),
+        };
+        upsert_article(&conn, feed_id, &article, false, &[]).unwrap();
+        let article_id: i64 = conn
+            .query_row("SELECT id FROM articles", [], |r| r.get(0))
+            .unwrap();
+        (conn, article_id)
+    }
+
+    #[test]
+    fn insert_and_list_highlight() {
+        let (conn, aid) = test_db();
+        let id = insert_highlight(&conn, aid, "quoted text", "pre", "suf", 12, "yellow", "")
+            .unwrap();
+        let all = list_highlights(&conn, aid).unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].id, id);
+        assert_eq!(all[0].quote, "quoted text");
+        assert_eq!(all[0].prefix, "pre");
+        assert_eq!(all[0].suffix, "suf");
+        assert_eq!(all[0].text_offset, 12);
+        assert_eq!(all[0].color, "yellow");
+        assert_eq!(all[0].note, "");
+    }
+
+    #[test]
+    fn highlights_ordered_by_offset() {
+        let (conn, aid) = test_db();
+        insert_highlight(&conn, aid, "third", "", "", 90, "yellow", "").unwrap();
+        insert_highlight(&conn, aid, "first", "", "", 10, "yellow", "").unwrap();
+        insert_highlight(&conn, aid, "second", "", "", 50, "yellow", "").unwrap();
+        let quotes: Vec<String> = list_highlights(&conn, aid)
+            .unwrap()
+            .into_iter()
+            .map(|h| h.quote)
+            .collect();
+        assert_eq!(quotes, ["first", "second", "third"]);
+    }
+
+    #[test]
+    fn update_note_and_color() {
+        let (conn, aid) = test_db();
+        let id = insert_highlight(&conn, aid, "q", "", "", 0, "yellow", "").unwrap();
+        update_highlight_note(&conn, id, "a thought").unwrap();
+        set_highlight_color(&conn, id, "green").unwrap();
+        let h = get_highlight(&conn, id).unwrap().unwrap();
+        assert_eq!(h.note, "a thought");
+        assert_eq!(h.color, "green");
+    }
+
+    #[test]
+    fn delete_highlight_removes_it() {
+        let (conn, aid) = test_db();
+        let id = insert_highlight(&conn, aid, "q", "", "", 0, "yellow", "").unwrap();
+        delete_highlight(&conn, id).unwrap();
+        assert!(list_highlights(&conn, aid).unwrap().is_empty());
+        assert!(get_highlight(&conn, id).unwrap().is_none());
+    }
+
+    #[test]
+    fn highlights_cascade_on_article_delete() {
+        let (conn, aid) = test_db();
+        insert_highlight(&conn, aid, "q", "", "", 0, "yellow", "").unwrap();
+        conn.execute("DELETE FROM articles WHERE id = ?1", params![aid])
+            .unwrap();
+        assert!(list_highlights(&conn, aid).unwrap().is_empty());
+    }
+
+    #[test]
+    fn list_all_highlights_spans_articles() {
+        let (conn, aid) = test_db();
+        insert_highlight(&conn, aid, "one", "", "", 0, "yellow", "").unwrap();
+        insert_highlight(&conn, aid, "two", "", "", 5, "green", "noted").unwrap();
+        assert_eq!(list_all_highlights(&conn).unwrap().len(), 2);
+    }
 }

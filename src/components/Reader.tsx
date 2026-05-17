@@ -13,6 +13,8 @@ import { tagColor } from "../lib/tagColors";
 import type { ArticleDetail } from "../types";
 import Icon from "./Icon";
 import TagPicker from "./TagPicker";
+import HighlightLayer from "./HighlightLayer";
+import SendToMenu from "./SendToMenu";
 
 interface Props {
   onToast: (msg: string) => void;
@@ -54,6 +56,7 @@ export default function Reader({ onToast }: Props) {
   const [scrolled, setScrolled] = useState(false);
   const [showExtracted, setShowExtracted] = useState(true);
   const [tagPick, setTagPick] = useState<{ x: number; y: number } | null>(null);
+  const [sendTo, setSendTo] = useState<{ x: number; y: number } | null>(null);
   const [heroBroken, setHeroBroken] = useState(false);
   const [progress, setProgress] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -91,6 +94,7 @@ export default function Reader({ onToast }: Props) {
     setShowExtracted(true);
     setScrolled(false);
     setTagPick(null);
+    setSendTo(null);
     setHeroBroken(false);
     setProgress(0);
     scrollMarkedRef.current = null;
@@ -260,6 +264,10 @@ export default function Reader({ onToast }: Props) {
   const body =
     (showExtracted && a.extractedHtml ? a.extractedHtml : a.contentHtml) || "";
   const ytId = a.sourceType === "youtube" ? youtubeId(a.url) : null;
+  // Changes whenever the rendered body markup changes (article switch,
+  // extract toggle, extraction finishing) — HighlightLayer re-applies its
+  // <mark> overlay each time this differs.
+  const bodyVersion = body.length + (showExtracted ? 1 : 0);
 
   return (
     <div className="reader" role="main">
@@ -342,6 +350,28 @@ export default function Reader({ onToast }: Props) {
         >
           <Icon name="share" size={16} />
         </button>
+        <button
+          className={`tb-btn ${sendTo ? "on" : ""}`}
+          title={t("sendTo.title")}
+          aria-label={t("sendTo.title")}
+          aria-haspopup="menu"
+          aria-expanded={sendTo != null}
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            setSendTo((p) => (p ? null : { x: r.left, y: r.bottom + 6 }));
+          }}
+        >
+          <Icon name="open" size={16} />
+        </button>
+        <HighlightLayer
+          // Keyed by article id so the export menu / popovers reset cleanly
+          // when the reader switches articles.
+          key={a.id}
+          articleId={a.id}
+          bodyRef={bodyRef}
+          bodyVersion={bodyVersion}
+          onToast={onToast}
+        />
         <button
           className={`tb-btn ${focusMode ? "on" : ""}`}
           onClick={() => setFocusMode(!focusMode)}
@@ -504,6 +534,16 @@ export default function Reader({ onToast }: Props) {
           x={tagPick.x}
           y={tagPick.y}
           onClose={() => setTagPick(null)}
+          onToast={onToast}
+        />
+      )}
+
+      {sendTo && (
+        <SendToMenu
+          articleId={a.id}
+          x={sendTo.x}
+          y={sendTo.y}
+          onClose={() => setSendTo(null)}
           onToast={onToast}
         />
       )}

@@ -28,6 +28,7 @@ const SECTIONS: { id: string; labelKey: string; icon: IconName; color: string }[
   { id: "subscriptions", labelKey: "settings.nav.subscriptions", icon: "rss", color: "#d97706" },
   { id: "filters", labelKey: "settings.nav.filters", icon: "mute", color: "#9333ea" },
   { id: "sync", labelKey: "settings.nav.sync", icon: "refresh", color: "#2c8a3e" },
+  { id: "integrations", labelKey: "settings.nav.integrations", icon: "share", color: "#0d7a8a" },
   { id: "shortcuts", labelKey: "settings.nav.shortcuts", icon: "command", color: "#5a5fc4" },
   { id: "notifications", labelKey: "settings.nav.notifications", icon: "inbox", color: "#a8501f" },
   { id: "advanced", labelKey: "settings.nav.advanced", icon: "sort", color: "#4a4a4a" },
@@ -67,6 +68,7 @@ export default function SettingsDialog({
     subscriptions: t("settings.sub.subscriptions", { count: feedCount }),
     filters: t("settings.sub.filters"),
     sync: t("settings.sub.sync"),
+    integrations: t("settings.sub.integrations"),
     shortcuts: t("settings.sub.shortcuts"),
     notifications: t("settings.sub.notifications"),
     advanced: t("settings.sub.advanced"),
@@ -132,6 +134,9 @@ export default function SettingsDialog({
               <FiltersSection feeds={feeds.data ?? []} onToast={onToast} />
             )}
             {section === "sync" && <SyncSection onToast={onToast} />}
+            {section === "integrations" && (
+              <IntegrationsSection onToast={onToast} />
+            )}
             {section === "shortcuts" && <ShortcutsSection />}
             {section === "notifications" && <NotificationsSection />}
             {section === "advanced" && <AdvancedSection onToast={onToast} />}
@@ -1002,6 +1007,235 @@ function SyncSection({ onToast }: { onToast: (m: string) => void }) {
             <span className="status">{t("settings.sync.statusUnavailable")}</span>
           </div>
         ))}
+      </div>
+    </>
+  );
+}
+
+/* ── integrations (highlight export — feature F7) ────────── */
+
+/** One labelled text field bound to a backend `settings` key. Loads its
+ *  current value on mount and writes back on Save. */
+function IntegrationField({
+  settingKey,
+  label,
+  placeholder,
+  password,
+  onToast,
+}: {
+  settingKey: string;
+  label: string;
+  placeholder: string;
+  password?: boolean;
+  onToast: (m: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [value, setValue] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    api
+      .getSetting(settingKey)
+      .then((v) => setValue(v ?? ""))
+      .catch(() => {})
+      .finally(() => setLoaded(true));
+  }, [settingKey]);
+
+  const save = async () => {
+    try {
+      await api.setSetting(settingKey, value.trim());
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 1500);
+      onToast(t("settings.integrations.saved"));
+    } catch (e) {
+      onToast(errorText(e));
+    }
+  };
+
+  return (
+    <div style={{ marginTop: 10 }}>
+      <label
+        style={{
+          display: "block",
+          fontSize: 12,
+          fontWeight: 600,
+          color: "var(--ink-2)",
+          marginBottom: 4,
+        }}
+      >
+        {label}
+      </label>
+      <div style={{ display: "flex", gap: 8 }}>
+        <input
+          className="modal-input"
+          style={{ margin: 0, flex: 1 }}
+          type={password ? "password" : "text"}
+          placeholder={placeholder}
+          value={value}
+          disabled={!loaded}
+          onChange={(e) => setValue(e.target.value)}
+        />
+        <button className="s-btn" onClick={save} disabled={!loaded}>
+          {saved ? <Icon name="check" size={12} /> : t("settings.integrations.save")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function IntegrationsSection({ onToast }: { onToast: (m: string) => void }) {
+  const { t } = useTranslation();
+  return (
+    <>
+      <div className="settings-group">
+        <h3 className="settings-group-title">
+          {t("settings.integrations.obsidianTitle")}
+        </h3>
+        <p className="modal-hint" style={{ marginBottom: 4 }}>
+          {t("settings.integrations.obsidianDesc")}
+        </p>
+        <IntegrationField
+          settingKey="obsidian_vault"
+          label={t("settings.integrations.obsidianVault")}
+          placeholder={t("settings.integrations.obsidianVaultPlaceholder")}
+          onToast={onToast}
+        />
+      </div>
+
+      <div className="settings-group">
+        <h3 className="settings-group-title">
+          {t("settings.integrations.readwiseTitle")}
+        </h3>
+        <p className="modal-hint" style={{ marginBottom: 4 }}>
+          {t("settings.integrations.readwiseDesc")}
+        </p>
+        <IntegrationField
+          settingKey="readwise_token"
+          label={t("settings.integrations.readwiseToken")}
+          placeholder={t("settings.integrations.readwiseTokenPlaceholder")}
+          password
+          onToast={onToast}
+        />
+      </div>
+
+      <div className="settings-group">
+        <h3 className="settings-group-title">
+          {t("settings.integrations.notionTitle")}
+        </h3>
+        <p className="modal-hint" style={{ marginBottom: 4 }}>
+          {t("settings.integrations.notionDesc")}
+        </p>
+        <IntegrationField
+          settingKey="notion_token"
+          label={t("settings.integrations.notionToken")}
+          placeholder={t("settings.integrations.notionTokenPlaceholder")}
+          password
+          onToast={onToast}
+        />
+        <IntegrationField
+          settingKey="notion_page"
+          label={t("settings.integrations.notionPage")}
+          placeholder={t("settings.integrations.notionPagePlaceholder")}
+          onToast={onToast}
+        />
+        <p className="modal-hint" style={{ marginTop: 6 }}>
+          {t("settings.integrations.notionShareNote")}
+        </p>
+      </div>
+
+      {/* ── "Send to…" share targets (feature F8) ── */}
+      <div className="settings-group">
+        <h3 className="settings-group-title">
+          {t("settings.integrations.pocketTitle")}
+        </h3>
+        <p className="modal-hint" style={{ marginBottom: 4 }}>
+          {t("settings.integrations.pocketDesc")}
+        </p>
+        <IntegrationField
+          settingKey="pocket_consumer_key"
+          label={t("settings.integrations.pocketConsumerKey")}
+          placeholder={t("settings.integrations.pocketConsumerKeyPlaceholder")}
+          onToast={onToast}
+        />
+        <IntegrationField
+          settingKey="pocket_access_token"
+          label={t("settings.integrations.pocketAccessToken")}
+          placeholder={t("settings.integrations.pocketAccessTokenPlaceholder")}
+          password
+          onToast={onToast}
+        />
+      </div>
+
+      <div className="settings-group">
+        <h3 className="settings-group-title">
+          {t("settings.integrations.instapaperTitle")}
+        </h3>
+        <p className="modal-hint" style={{ marginBottom: 4 }}>
+          {t("settings.integrations.instapaperDesc")}
+        </p>
+        <IntegrationField
+          settingKey="instapaper_username"
+          label={t("settings.integrations.instapaperUsername")}
+          placeholder={t("settings.integrations.instapaperUsernamePlaceholder")}
+          onToast={onToast}
+        />
+        <IntegrationField
+          settingKey="instapaper_password"
+          label={t("settings.integrations.instapaperPassword")}
+          placeholder={t("settings.integrations.instapaperPasswordPlaceholder")}
+          password
+          onToast={onToast}
+        />
+      </div>
+
+      <div className="settings-group">
+        <h3 className="settings-group-title">
+          {t("settings.integrations.kindleTitle")}
+        </h3>
+        <p className="modal-hint" style={{ marginBottom: 4 }}>
+          {t("settings.integrations.kindleDesc")}
+        </p>
+        <IntegrationField
+          settingKey="kindle_address"
+          label={t("settings.integrations.kindleAddress")}
+          placeholder={t("settings.integrations.kindleAddressPlaceholder")}
+          onToast={onToast}
+        />
+        <IntegrationField
+          settingKey="kindle_smtp_host"
+          label={t("settings.integrations.kindleSmtpHost")}
+          placeholder={t("settings.integrations.kindleSmtpHostPlaceholder")}
+          onToast={onToast}
+        />
+        <IntegrationField
+          settingKey="kindle_smtp_port"
+          label={t("settings.integrations.kindleSmtpPort")}
+          placeholder={t("settings.integrations.kindleSmtpPortPlaceholder")}
+          onToast={onToast}
+        />
+        <IntegrationField
+          settingKey="kindle_smtp_username"
+          label={t("settings.integrations.kindleSmtpUsername")}
+          placeholder={t("settings.integrations.kindleSmtpUsernamePlaceholder")}
+          onToast={onToast}
+        />
+        <IntegrationField
+          settingKey="kindle_smtp_password"
+          label={t("settings.integrations.kindleSmtpPassword")}
+          placeholder={t("settings.integrations.kindleSmtpPasswordPlaceholder")}
+          password
+          onToast={onToast}
+        />
+        <IntegrationField
+          settingKey="kindle_from_address"
+          label={t("settings.integrations.kindleFromAddress")}
+          placeholder={t("settings.integrations.kindleFromAddressPlaceholder")}
+          onToast={onToast}
+        />
+        <p className="modal-hint" style={{ marginTop: 6 }}>
+          {t("settings.integrations.kindleNote")}
+        </p>
       </div>
     </>
   );

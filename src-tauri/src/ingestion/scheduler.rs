@@ -3,6 +3,7 @@
 
 use crate::db;
 use crate::error::AppResult;
+use crate::ingestion::newsletter::{self, NewsletterConfig};
 use crate::ingestion::{fetch, parse};
 use crate::models::RefreshProgress;
 use crate::state::AppState;
@@ -181,6 +182,10 @@ pub async fn refresh_all(
         }
     }
 
+    // Newsletter sources: poll each configured IMAP mailbox and ingest any
+    // new messages as articles, alongside the RSS refresh above.
+    total_new += poll_newsletters(app, dedup, &rules).await;
+
     // Retention: drop old read articles when a finite window is configured.
     // The DELETE scans the whole table, so throttle it to once per day rather
     // than running on every refresh cycle.
@@ -235,6 +240,68 @@ pub async fn refresh_all(
     notify::update_badge(app).await;
     tray::refresh(app).await;
     Ok(total_new)
+}
+
+/// Poll every configured email-newsletter source over IMAP and ingest any new
+/// messages as articles. Runs as part of `refresh_all` so newsletters refresh
+/// on the same cadence as RSS feeds. Returns the total number of new articles.
+///
+/// A failure for one mailbox (bad credentials, server down) is recorded as the
+/// feed's `fetch_error` and does not abort the others — the same resilience
+/// the RSS path has.
+async fn poll_newsletters(
+    app: &AppHandle,
+    dedup: bool,
+    rules: &[crate::models::Rule],
+) -> usize {
+    let state = app.state::<AppState>();
+    let sources = {
+        let conn = state.db.lock().await;
+        db::newsletter_sources_to_poll(&conn).unwrap_or_default()
+    };
+    if sources.is_empty() {
+        return 0;
+    }
+
+    let mut total_new = 0usize;
+    for (feed_id, host, port, username, password, folder) in sources {
+        let cfg = NewsletterConfig {
+            host,
+            port,
+            username,
+            password,
+            folder,
+        };
+        // `imap` is a blocking crate — fetch on the blocking pool.
+        let fetched = tokio::task::spawn_blocking(move || newsletter::fetch_recent(&cfg, 50))
+            .await
+            .map_err(|e| e.to_string())
+            .and_then(|r| r.map_err(|e| e.to_string()));
+
+        match fetched {
+            Ok(messages) => {
+                let conn = state.db.lock().await;
+                for raw in &messages {
+                    if let Some(parsed) = newsletter::email_to_article(raw) {
+                        match db::upsert_article(&conn, feed_id, &parsed.article, dedup, rules) {
+                            Ok(true) => total_new += 1,
+                            Ok(false) => {}
+                            Err(e) => log::warn!(
+                                "newsletter upsert failed (feed {feed_id}): {e}"
+                            ),
+                        }
+                    }
+                }
+                let _ = db::touch_feed(&conn, feed_id);
+            }
+            Err(e) => {
+                log::warn!("newsletter poll failed (feed {feed_id}): {e}");
+                let conn = state.db.lock().await;
+                let _ = db::set_feed_error(&conn, feed_id, &e);
+            }
+        }
+    }
+    total_new
 }
 
 /// Read the refresh interval (minutes) from settings, defaulting to 30.

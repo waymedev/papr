@@ -55,6 +55,8 @@ export default function App() {
     open: false,
   });
   const [addFeed, setAddFeed] = useState(false);
+  // Feed URL handed over by a `papr://subscribe` deep link (browser extension).
+  const [addFeedUrl, setAddFeedUrl] = useState<string | undefined>(undefined);
   const [newFolder, setNewFolder] = useState(false);
   const toastTimer = useRef<number | undefined>(undefined);
 
@@ -153,6 +155,17 @@ export default function App() {
   // ── "Settings…" from the menu-bar tray ──
   useEffect(() => {
     const un = listen("tray-open-settings", () => setSettings({ open: true }));
+    return () => {
+      un.then((f) => f());
+    };
+  }, []);
+
+  // ── papr://subscribe deep links from the browser extension (F6) ──
+  useEffect(() => {
+    const un = listen<string>("deep-link-subscribe", (e) => {
+      setAddFeedUrl(e.payload);
+      setAddFeed(true);
+    });
     return () => {
       un.then((f) => f());
     };
@@ -361,7 +374,14 @@ export default function App() {
       )}
 
       {addFeed && (
-        <AddFeedDialog onClose={() => setAddFeed(false)} onToast={showToast} />
+        <AddFeedDialog
+          onClose={() => {
+            setAddFeed(false);
+            setAddFeedUrl(undefined);
+          }}
+          onToast={showToast}
+          initialUrl={addFeedUrl}
+        />
       )}
 
       {newFolder && (

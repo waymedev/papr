@@ -6,19 +6,40 @@ mod ai;
 mod commands;
 mod db;
 mod error;
+mod export;
 mod extraction;
 mod ingestion;
 mod models;
 mod notify;
 mod opml;
 mod sanitize;
+mod share;
 mod state;
 mod sync;
 mod tray;
 
+use ingestion::discovery::{self, DeepLink};
 use state::AppState;
 use std::fs;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
+
+/// Handle every URL delivered through the `papr://` deep-link scheme. A
+/// `papr://subscribe?url=…` link focuses the main window and emits a
+/// `deep-link-subscribe` event the frontend listens for to open the
+/// Add-feed dialog prefilled with the feed URL. Unrecognised links are
+/// ignored. Pure parsing lives in [`discovery::parse_deep_link`].
+fn handle_deep_links(app: &tauri::AppHandle, urls: &[String]) {
+    for raw in urls {
+        if let Some(DeepLink::Subscribe { url }) = discovery::parse_deep_link(raw) {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+            let _ = app.emit("deep-link-subscribe", url);
+        }
+    }
+}
 
 /// Number of read-only connections in the UI query pool.
 const READ_POOL_SIZE: usize = 4;
@@ -30,11 +51,30 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
         .setup(|app| {
+            // ── papr:// deep links (feature F6) ───────────────────────
+            // Links opened while the app is already running arrive here;
+            // a cold-start link is delivered the same way once setup runs.
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let handle = app.handle().clone();
+                app.deep_link().on_open_url(move |event| {
+                    let urls: Vec<String> =
+                        event.urls().iter().map(|u| u.to_string()).collect();
+                    handle_deep_links(&handle, &urls);
+                });
+                // On Linux/Windows dev builds, register the scheme at runtime
+                // so `papr://` resolves without a full bundle install.
+                #[cfg(any(windows, target_os = "linux"))]
+                {
+                    let _ = app.deep_link().register("papr");
+                }
+            }
             // ── Database ──────────────────────────────────────────────
             let data_dir = app.path().app_data_dir().expect("resolve app data dir");
             fs::create_dir_all(&data_dir).ok();
@@ -89,6 +129,7 @@ pub fn run() {
             commands::delete_folder,
             commands::list_feeds,
             commands::add_feed,
+            commands::search_feed_directory,
             commands::delete_feed,
             commands::move_feed,
             commands::rename_feed,
@@ -131,6 +172,21 @@ pub fn run() {
             commands::update_rule,
             commands::delete_rule,
             commands::preview_rule,
+            commands::add_newsletter_source,
+            commands::list_newsletter_sources,
+            commands::remove_newsletter_source,
+            commands::create_highlight,
+            commands::list_highlights,
+            commands::list_all_highlights,
+            commands::update_highlight_note,
+            commands::set_highlight_color,
+            commands::delete_highlight,
+            commands::export_highlights_markdown,
+            commands::export_highlights_to_obsidian,
+            commands::export_highlights_to_readwise,
+            commands::export_highlights_to_notion,
+            commands::share_targets,
+            commands::send_article,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Papr");
