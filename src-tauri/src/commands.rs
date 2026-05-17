@@ -539,7 +539,8 @@ pub async fn clear_all_data(app: AppHandle) -> AppResult<()> {
 #[tauri::command]
 pub async fn apply_network_settings(state: State<'_, AppState>) -> AppResult<()> {
     let client = {
-        let conn = state.db.lock().await;
+        // Pure settings read — use the read pool, not the writer lock.
+        let conn = state.read().await;
         fetch::build_client_from_settings(&conn)
     };
     state.set_http(client);
