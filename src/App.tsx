@@ -151,20 +151,28 @@ export default function App() {
     };
   }, []);
 
+  // A ref — not the `refreshing` state — is the concurrency guard: it must be
+  // read-and-set synchronously, and the kick-off has side effects (a network
+  // refresh, a toast). A setState updater must stay pure; React invokes it
+  // twice under StrictMode, which previously fired the refresh twice in dev.
+  // `refreshing` state is kept purely to drive the sidebar spinner.
+  const refreshingRef = useRef(false);
   const doRefresh = useCallback(() => {
-    setRefreshing((busy) => {
-      if (busy) return busy;
-      showToast(t("app.refreshing"));
-      api
-        .refreshFeeds()
-        .then(async (n) => {
-          await qc.invalidateQueries();
-          showToast(n > 0 ? t("app.foundNew", { count: n }) : t("app.upToDate"));
-        })
-        .catch((e) => showToast(errorText(e)))
-        .finally(() => setRefreshing(false));
-      return true;
-    });
+    if (refreshingRef.current) return;
+    refreshingRef.current = true;
+    setRefreshing(true);
+    showToast(t("app.refreshing"));
+    api
+      .refreshFeeds()
+      .then(async (n) => {
+        await qc.invalidateQueries();
+        showToast(n > 0 ? t("app.foundNew", { count: n }) : t("app.upToDate"));
+      })
+      .catch((e) => showToast(errorText(e)))
+      .finally(() => {
+        refreshingRef.current = false;
+        setRefreshing(false);
+      });
   }, [qc, showToast, t]);
 
   const markAllRead = useCallback(async () => {
