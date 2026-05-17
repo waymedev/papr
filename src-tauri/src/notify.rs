@@ -19,7 +19,7 @@ fn flag(conn: &rusqlite::Connection, key: &str, default: bool) -> bool {
 pub async fn update_badge(app: &AppHandle) {
     let count = {
         let state = app.state::<AppState>();
-        let conn = state.db.lock().await;
+        let conn = state.read().await;
         if !flag(&conn, "notify_badge", true) {
             0
         } else {
@@ -49,7 +49,7 @@ pub async fn notify_new_articles(app: &AppHandle, count: usize) {
     }
     let (sound, lang) = {
         let state = app.state::<AppState>();
-        let conn = state.db.lock().await;
+        let conn = state.read().await;
         if !flag(&conn, "notify_enabled", true) {
             return;
         }

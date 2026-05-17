@@ -233,7 +233,7 @@ pub fn build(
 pub async fn refresh(app: &AppHandle) {
     let (lang, unread, last) = {
         let state = app.state::<AppState>();
-        let conn = state.db.lock().await;
+        let conn = state.read().await;
         (
             db::get_setting(&conn, "language")
                 .ok()
