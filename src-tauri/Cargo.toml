@@ -1,12 +1,12 @@
 [package]
-name = "tauri-app"
+name = "papr"
 version = "0.1.1"
 description = "Papr — a modern RSS reader"
 authors = ["you"]
 edition = "2021"
 
 [lib]
-name = "tauri_app_lib"
+name = "papr_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
