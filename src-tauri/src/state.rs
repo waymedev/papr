@@ -3,13 +3,22 @@
 
 use reqwest::Client;
 use rusqlite::Connection;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::RwLock;
 use tokio::sync::Mutex;
 
 pub struct AppState {
-    /// The single SQLite connection, guarded by an async mutex. All access is
-    /// short and synchronous, so the lock is never held across `.await`.
+    /// The writer SQLite connection, guarded by an async mutex. All mutations
+    /// and the background scheduler hold this exclusively; access is short and
+    /// synchronous, so the lock is never held across `.await`.
     pub db: Mutex<Connection>,
+    /// A small pool of read-only connections for UI queries. Under WAL these
+    /// run concurrently with the writer (and each other), so the interface
+    /// stays responsive while a background refresh is writing.
+    readers: Vec<Mutex<Connection>>,
+    /// Round-robin cursor into `readers`, so concurrent reads spread across
+    /// the pool instead of contending on one connection.
+    next_reader: AtomicUsize,
     /// Shared HTTP client (connection pooling) for all feed fetching. Held
     /// behind an `RwLock` so the network settings (proxy, timeout) can rebuild
     /// it without an app restart. The lock is only ever held to clone the
@@ -18,6 +27,25 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// Build the shared state. `readers` must be non-empty.
+    pub fn new(db: Connection, readers: Vec<Connection>, http: Client) -> Self {
+        assert!(!readers.is_empty(), "read pool must have at least one connection");
+        Self {
+            db: Mutex::new(db),
+            readers: readers.into_iter().map(Mutex::new).collect(),
+            next_reader: AtomicUsize::new(0),
+            http: RwLock::new(http),
+        }
+    }
+
+    /// Acquire a read-only connection from the pool (round-robin). Use this for
+    /// every UI query; reserve `db` for writes so reads never block on the
+    /// background refresh.
+    pub async fn read(&self) -> tokio::sync::MutexGuard<'_, Connection> {
+        let i = self.next_reader.fetch_add(1, Ordering::Relaxed) % self.readers.len();
+        self.readers[i].lock().await
+    }
+
     /// Clone the current HTTP client out for use.
     ///
     /// The lock is never held across an `.await`, but a panic elsewhere could

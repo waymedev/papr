@@ -18,8 +18,10 @@ mod tray;
 
 use state::AppState;
 use std::fs;
-use std::sync::RwLock;
 use tauri::Manager;
+
+/// Number of read-only connections in the UI query pool.
+const READ_POOL_SIZE: usize = 4;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -36,11 +38,18 @@ pub fn run() {
             // ── Database ──────────────────────────────────────────────
             let data_dir = app.path().app_data_dir().expect("resolve app data dir");
             fs::create_dir_all(&data_dir).ok();
-            let conn = db::open(&data_dir.join("lumen.db")).expect("open database");
+            let db_path = data_dir.join("lumen.db");
+            let conn = db::open(&db_path).expect("open database");
             // On the very first launch, subscribe to a curated set of feeds.
             let seeded = db::seed_default_feeds(&conn).unwrap_or(false);
+            // A small pool of read-only connections for UI queries — under WAL
+            // they run concurrently with the writer, so the interface stays
+            // responsive while a background refresh is writing.
+            let readers: Vec<_> = (0..READ_POOL_SIZE)
+                .map(|_| db::open_reader(&db_path).expect("open reader connection"))
+                .collect();
             // The HTTP client honours the persisted proxy / timeout settings.
-            let http = RwLock::new(ingestion::fetch::build_client_from_settings(&conn));
+            let http = ingestion::fetch::build_client_from_settings(&conn);
             // Snapshot the state the tray menu needs (read before the
             // connection moves behind the async mutex).
             let lang = db::get_setting(&conn, "language")
@@ -50,10 +59,7 @@ pub fn run() {
             let unread = db::count_unread(&conn).unwrap_or(0);
             let latest_fetch = db::latest_fetch(&conn).ok().flatten();
 
-            app.manage(AppState {
-                db: tokio::sync::Mutex::new(conn),
-                http,
-            });
+            app.manage(AppState::new(conn, readers, http));
 
             // ── macOS window vibrancy ─────────────────────────────────
             #[cfg(target_os = "macos")]

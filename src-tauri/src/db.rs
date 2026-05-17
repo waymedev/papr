@@ -138,13 +138,27 @@ static MIGRATIONS: LazyLock<Migrations> = LazyLock::new(|| {
     ])
 });
 
-/// Open the database, run migrations, and set pragmas.
+/// Open the writer connection: run migrations and set the write-side pragmas.
+/// WAL mode is persisted in the database header, so reader connections opened
+/// afterwards inherit it automatically.
 pub fn open(path: &Path) -> AppResult<Connection> {
     let mut conn = Connection::open(path)?;
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "foreign_keys", "ON")?;
     conn.pragma_update(None, "synchronous", "NORMAL")?;
+    conn.pragma_update(None, "busy_timeout", 5000)?;
     MIGRATIONS.to_latest(&mut conn)?;
+    Ok(conn)
+}
+
+/// Open a read-only connection for the UI query pool. Under WAL these run
+/// concurrently with the writer, so interface reads never block on a
+/// background refresh. `query_only` is a safety net against an accidental
+/// write on a pooled reader. Must be called after `open` has migrated.
+pub fn open_reader(path: &Path) -> AppResult<Connection> {
+    let conn = Connection::open(path)?;
+    conn.pragma_update(None, "busy_timeout", 5000)?;
+    conn.pragma_update(None, "query_only", true)?;
     Ok(conn)
 }
 

@@ -17,7 +17,7 @@ use url::Url;
 
 #[tauri::command]
 pub async fn list_folders(state: State<'_, AppState>) -> AppResult<Vec<Folder>> {
-    let conn = state.db.lock().await;
+    let conn = state.read().await;
     db::list_folders(&conn)
 }
 
@@ -43,7 +43,7 @@ pub async fn delete_folder(state: State<'_, AppState>, id: i64) -> AppResult<()>
 
 #[tauri::command]
 pub async fn list_feeds(state: State<'_, AppState>) -> AppResult<Vec<Feed>> {
-    let conn = state.db.lock().await;
+    let conn = state.read().await;
     db::list_feeds(&conn)
 }
 
@@ -181,7 +181,7 @@ pub async fn list_articles(
     limit: i64,
     offset: i64,
 ) -> AppResult<Vec<ArticleSummary>> {
-    let conn = state.db.lock().await;
+    let conn = state.read().await;
     db::list_articles(
         &conn,
         &query,
@@ -195,7 +195,7 @@ pub async fn list_articles(
 
 #[tauri::command]
 pub async fn get_article(state: State<'_, AppState>, id: i64) -> AppResult<ArticleDetail> {
-    let conn = state.db.lock().await;
+    let conn = state.read().await;
     db::get_article(&conn, id)
 }
 
@@ -261,7 +261,7 @@ pub struct SmartCounts {
 
 #[tauri::command]
 pub async fn smart_counts(state: State<'_, AppState>) -> AppResult<SmartCounts> {
-    let conn = state.db.lock().await;
+    let conn = state.read().await;
     let (unread, starred, read_later) = db::smart_counts(&conn)?;
     Ok(SmartCounts {
         unread,
@@ -339,7 +339,7 @@ pub async fn import_opml(app: AppHandle, content: String) -> AppResult<usize> {
 
 #[tauri::command]
 pub async fn export_opml(state: State<'_, AppState>) -> AppResult<String> {
-    let conn = state.db.lock().await;
+    let conn = state.read().await;
     let feeds = db::feeds_for_export(&conn)?;
     opml::build(&feeds)
 }
@@ -348,7 +348,7 @@ pub async fn export_opml(state: State<'_, AppState>) -> AppResult<String> {
 
 #[tauri::command]
 pub async fn get_setting(state: State<'_, AppState>, key: String) -> AppResult<Option<String>> {
-    let conn = state.db.lock().await;
+    let conn = state.read().await;
     db::get_setting(&conn, &key)
 }
 
@@ -486,7 +486,7 @@ pub struct StorageStats {
 
 #[tauri::command]
 pub async fn storage_stats(state: State<'_, AppState>) -> AppResult<StorageStats> {
-    let conn = state.db.lock().await;
+    let conn = state.read().await;
     let (db_bytes, article_count, feed_count) = db::storage_stats(&conn)?;
     Ok(StorageStats {
         db_bytes,
@@ -603,7 +603,7 @@ pub async fn refresh_tray(app: AppHandle) -> AppResult<()> {
 
 #[tauri::command]
 pub async fn list_tags(state: State<'_, AppState>) -> AppResult<Vec<Tag>> {
-    let conn = state.db.lock().await;
+    let conn = state.read().await;
     db::list_tags(&conn)
 }
 
@@ -655,7 +655,7 @@ pub async fn set_article_tag(
 
 #[tauri::command]
 pub async fn list_rules(state: State<'_, AppState>) -> AppResult<Vec<Rule>> {
-    let conn = state.db.lock().await;
+    let conn = state.read().await;
     db::list_rules(&conn)
 }
 
@@ -719,7 +719,7 @@ pub async fn preview_rule(
     field: String,
     query: String,
 ) -> AppResult<RulePreview> {
-    let conn = state.db.lock().await;
+    let conn = state.read().await;
     let (count, samples) = db::preview_rule(&conn, feed_id, &field, query.trim())?;
     Ok(RulePreview { count, samples })
 }
