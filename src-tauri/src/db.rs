@@ -701,8 +701,20 @@ pub fn set_read_later(conn: &Connection, id: i64, v: bool) -> AppResult<()> {
     Ok(())
 }
 
+/// Store the extracted full-text HTML and re-index the article's FTS body
+/// with it, so search covers the whole article rather than just the short
+/// summary the feed shipped.
 pub fn set_extracted_html(conn: &Connection, id: i64, html: &str) -> AppResult<()> {
-    conn.execute("UPDATE articles SET extracted_html = ?2 WHERE id = ?1", params![id, html])?;
+    let tx = conn.unchecked_transaction()?;
+    tx.execute(
+        "UPDATE articles SET extracted_html = ?2 WHERE id = ?1",
+        params![id, html],
+    )?;
+    tx.execute(
+        "UPDATE articles_fts SET body = ?2 WHERE rowid = ?1",
+        params![id, crate::sanitize::html_to_text(html)],
+    )?;
+    tx.commit()?;
     Ok(())
 }
 
