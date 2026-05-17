@@ -430,6 +430,7 @@
     "emptyTagName": "标签名称不能为空",
     "emptyRuleQuery": "请为规则至少输入一个关键词",
     "noFeedFound": "在该网址未找到可订阅的源",
+    "responseTooLarge": "服务器响应过大",
     "alreadySubscribed": "已经订阅过这个源了",
     "noArticleUrl": "这篇文章没有原文链接",
     "noArticles": "还没有可供生成摘要的文章",

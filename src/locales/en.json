@@ -430,6 +430,7 @@
     "emptyTagName": "Tag name can't be empty",
     "emptyRuleQuery": "Enter at least one keyword for the rule",
     "noFeedFound": "No feed found at that URL",
+    "responseTooLarge": "The server's response was too large",
     "alreadySubscribed": "You are already subscribed to this feed",
     "noArticleUrl": "This article has no source URL",
     "noArticles": "No articles to summarize yet",

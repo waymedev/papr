@@ -2,7 +2,7 @@
 //! feeds cost a single 304 round-trip.
 
 use crate::db;
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use reqwest::header::{
     CONTENT_TYPE, ETAG, IF_MODIFIED_SINCE, IF_NONE_MATCH, LAST_MODIFIED,
 };
@@ -11,6 +11,28 @@ use rusqlite::Connection;
 use std::time::Duration;
 
 pub const USER_AGENT: &str = "Papr/0.1 (+https://github.com/papr-reader)";
+
+/// Hard cap on a fetched body. Feeds and article pages are text — a few
+/// hundred KB at most — so 16 MiB is generous while still stopping a
+/// hostile or misconfigured server from exhausting memory.
+const MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
+
+/// Read a response body, aborting if it exceeds `MAX_BODY_BYTES`. Streams in
+/// chunks so an unbounded (or lying-`Content-Length`) response can't first be
+/// buffered whole.
+async fn read_capped(mut resp: reqwest::Response) -> AppResult<Vec<u8>> {
+    if resp.content_length().is_some_and(|n| n > MAX_BODY_BYTES as u64) {
+        return Err(AppError::code("responseTooLarge"));
+    }
+    let mut buf: Vec<u8> = Vec::new();
+    while let Some(chunk) = resp.chunk().await? {
+        if buf.len() + chunk.len() > MAX_BODY_BYTES {
+            return Err(AppError::code("responseTooLarge"));
+        }
+        buf.extend_from_slice(&chunk);
+    }
+    Ok(buf)
+}
 
 /// Build the shared HTTP client (connection pooling, gzip/brotli, redirects).
 ///
@@ -89,7 +111,7 @@ pub async fn conditional_get(
     };
     let etag = header(ETAG);
     let last_modified = header(LAST_MODIFIED);
-    let bytes = resp.bytes().await?.to_vec();
+    let bytes = read_capped(resp).await?;
     Ok(Fetched::Body {
         bytes,
         etag,
@@ -107,6 +129,6 @@ pub async fn get(client: &Client, url: &str) -> AppResult<(Vec<u8>, Option<Strin
         .get(CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
-    let bytes = resp.bytes().await?.to_vec();
+    let bytes = read_capped(resp).await?;
     Ok((bytes, content_type, final_url))
 }

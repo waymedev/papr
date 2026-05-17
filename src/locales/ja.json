@@ -430,6 +430,7 @@
     "emptyTagName": "タグ名を空にはできません",
     "emptyRuleQuery": "ルールにキーワードを1つ以上入力してください",
     "noFeedFound": "その URL ではフィードが見つかりませんでした",
+    "responseTooLarge": "サーバーの応答が大きすぎます",
     "alreadySubscribed": "このフィードはすでに購読済みです",
     "noArticleUrl": "この記事には元記事の URL がありません",
     "noArticles": "要約できる記事がまだありません",
