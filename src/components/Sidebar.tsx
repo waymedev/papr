@@ -24,6 +24,15 @@ interface Props {
 const sameQuery = (a: ArticleQuery, b: ArticleQuery) =>
   JSON.stringify(a) === JSON.stringify(b);
 
+/** Enter / Space activator for a div that behaves as a button — gives the
+ *  sidebar's clickable rows keyboard parity with their onClick. */
+const onActivate = (fn: () => void) => (e: React.KeyboardEvent) => {
+  if (e.key === "Enter" || e.key === " ") {
+    e.preventDefault();
+    fn();
+  }
+};
+
 type Menu =
   | { x: number; y: number; kind: "feed"; feed: Feed }
   | { x: number; y: number; kind: "folder"; folder: Folder }
@@ -50,7 +59,14 @@ function SbItem({
   onClick: () => void;
 }) {
   return (
-    <div className={`sb-item ${active ? "active" : ""}`} onClick={onClick}>
+    <div
+      className={`sb-item ${active ? "active" : ""}`}
+      role="button"
+      tabIndex={0}
+      aria-current={active || undefined}
+      onClick={onClick}
+      onKeyDown={onActivate(onClick)}
+    >
       <span className="sb-ico">
         <Icon name={icon} size={15} />
       </span>
@@ -276,6 +292,9 @@ export default function Sidebar({
       className={`sb-item ${
         isActive({ kind: "feed", value: f.id }) ? "active" : ""
       } ${dragId === f.id ? "dragging" : ""}`}
+      role="button"
+      tabIndex={0}
+      aria-current={isActive({ kind: "feed", value: f.id }) || undefined}
       draggable
       onDragStart={() => setDragId(f.id)}
       onDragEnd={() => {
@@ -283,6 +302,7 @@ export default function Sidebar({
         setDropFolder(null);
       }}
       onClick={() => select({ kind: "feed", value: f.id }, f.title)}
+      onKeyDown={onActivate(() => select({ kind: "feed", value: f.id }, f.title))}
       onContextMenu={(e) => {
         e.preventDefault();
         setMenu({ x: e.clientX, y: e.clientY, kind: "feed", feed: f });
@@ -304,7 +324,13 @@ export default function Sidebar({
 
       <div style={{ height: 38 }} />
 
-      <div className="sidebar-search" onClick={onSearchClick}>
+      <div
+        className="sidebar-search"
+        role="button"
+        tabIndex={0}
+        onClick={onSearchClick}
+        onKeyDown={onActivate(onSearchClick)}
+      >
         <Icon name="search" size={13} />
         <span>{t("sidebar.searchArticles")}</span>
         <kbd>⌘K</kbd>
@@ -403,9 +429,15 @@ export default function Sidebar({
             >
               <div
                 className={`sb-folder ${isCollapsed ? "collapsed" : ""}`}
+                role="button"
+                tabIndex={0}
+                aria-expanded={!isCollapsed}
                 onClick={() =>
                   setCollapsed((s) => ({ ...s, [folder.id]: !isCollapsed }))
                 }
+                onKeyDown={onActivate(() =>
+                  setCollapsed((s) => ({ ...s, [folder.id]: !isCollapsed })),
+                )}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   setMenu({ x: e.clientX, y: e.clientY, kind: "folder", folder });
@@ -445,6 +477,9 @@ export default function Sidebar({
             } ${tagDragId === tag.id ? "dragging" : ""} ${
               tagOverId === tag.id ? "drop-above" : ""
             }`}
+            role="button"
+            tabIndex={0}
+            aria-current={isActive({ kind: "tag", value: tag.id }) || undefined}
             draggable
             onDragStart={() => setTagDragId(tag.id)}
             onDragEnd={() => {
@@ -459,6 +494,9 @@ export default function Sidebar({
             }}
             onDrop={() => dropTag(tag.id)}
             onClick={() => select({ kind: "tag", value: tag.id }, tag.name)}
+            onKeyDown={onActivate(() =>
+              select({ kind: "tag", value: tag.id }, tag.name),
+            )}
             onContextMenu={(e) => {
               e.preventDefault();
               setMenu({ x: e.clientX, y: e.clientY, kind: "tag", tag });

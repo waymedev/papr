@@ -210,6 +210,7 @@ function Segmented<T extends string>({
         <button
           key={o.value}
           className={value === o.value ? "on" : ""}
+          aria-pressed={value === o.value}
           onClick={() => onChange(o.value)}
         >
           {o.label}
