@@ -154,8 +154,12 @@ export const useUi = create<UiState>((set) => ({
   focusMode: false,
   aiOpen: false,
 
-  select: (query, label) =>
-    set({ query, queryLabel: label, selectedArticleId: null, search: "" }),
+  select: (query, label) => {
+    // Remember the selection so the "open on startup: last view" preference
+    // can restore it next launch.
+    ls.set("lastView", JSON.stringify({ query, label }));
+    set({ query, queryLabel: label, selectedArticleId: null, search: "" });
+  },
   openArticle: (id) => set({ selectedArticleId: id }),
   toggleUnreadOnly: () => set((s) => ({ unreadOnly: !s.unreadOnly })),
   toggleSort: () => set((s) => ({ sortOldest: !s.sortOldest })),

@@ -95,6 +95,19 @@ export default function App() {
       useUi
         .getState()
         .select({ kind: startupView } as ArticleQuery, labels[startupView]);
+    } else if (startupView === "last") {
+      // Restore the view that was open when the app last closed.
+      try {
+        const raw = localStorage.getItem("lastView");
+        if (raw) {
+          const saved = JSON.parse(raw) as { query?: ArticleQuery; label?: string };
+          if (saved.query?.kind) {
+            useUi.getState().select(saved.query, saved.label ?? "");
+          }
+        }
+      } catch {
+        /* ignore a corrupt persisted value */
+      }
     }
     if (hideReadOnStartup && !useUi.getState().unreadOnly) {
       useUi.getState().toggleUnreadOnly();
