@@ -17,6 +17,9 @@ dist-ssr
 !.vscode/extensions.json
 .idea
 .DS_Store
+
+# ralph-loop local state
+.claude/
 *.suo
 *.ntvs*
 *.njsproj

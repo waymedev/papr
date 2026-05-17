@@ -43,6 +43,10 @@ export default function Reader({ onToast }: Props) {
   const [showExtracted, setShowExtracted] = useState(true);
   const [tagPick, setTagPick] = useState<{ x: number; y: number } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Article id we already auto-marked read via scroll, so a flurry of scroll
+  // events near the foot doesn't fire `setRead` repeatedly before the
+  // optimistic cache patch lands.
+  const scrollMarkedRef = useRef<number | null>(null);
   const playTrack = usePlayer((s) => s.play);
   const playingSrc = usePlayer((s) => (s.playing ? s.track?.src : null));
 
@@ -70,6 +74,7 @@ export default function Reader({ onToast }: Props) {
     setShowExtracted(true);
     setScrolled(false);
     setTagPick(null);
+    scrollMarkedRef.current = null;
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [id]);
 
@@ -98,8 +103,10 @@ export default function Reader({ onToast }: Props) {
       markReadOnScroll &&
       a &&
       !a.isRead &&
+      scrollMarkedRef.current !== a.id &&
       el.scrollHeight - el.scrollTop - el.clientHeight < 120
     ) {
+      scrollMarkedRef.current = a.id;
       actions.setRead(a.id, true);
     }
   };
@@ -178,6 +185,8 @@ export default function Reader({ onToast }: Props) {
           className={`tb-btn ${a.isStarred ? "on" : ""}`}
           onClick={() => actions.setStarred(a.id, !a.isStarred)}
           title={t("reader.tbStar")}
+          aria-label={t("reader.tbStar")}
+          aria-pressed={a.isStarred}
         >
           <Icon name={a.isStarred ? "star-fill" : "star"} size={16} />
         </button>
@@ -185,6 +194,8 @@ export default function Reader({ onToast }: Props) {
           className={`tb-btn ${a.readLater ? "on" : ""}`}
           onClick={() => actions.setReadLater(a.id, !a.readLater)}
           title={t("reader.tbReadLater")}
+          aria-label={t("reader.tbReadLater")}
+          aria-pressed={a.readLater}
         >
           <Icon name={a.readLater ? "bookmark-fill" : "bookmark"} size={16} />
         </button>
@@ -195,6 +206,9 @@ export default function Reader({ onToast }: Props) {
             setTagPick((p) => (p ? null : { x: r.left, y: r.bottom + 6 }));
           }}
           title={t("reader.tbTags")}
+          aria-label={t("reader.tbTags")}
+          aria-haspopup="menu"
+          aria-expanded={tagPick != null}
         >
           <Icon name="tag" size={16} />
         </button>
@@ -202,6 +216,8 @@ export default function Reader({ onToast }: Props) {
           className={`tb-btn ${aiOpen ? "on" : ""}`}
           onClick={() => setAiOpen(!aiOpen)}
           title={t("reader.tbAiSummary")}
+          aria-label={t("reader.tbAiSummary")}
+          aria-pressed={aiOpen}
         >
           <Icon name={aiOpen ? "sparkle-fill" : "sparkle"} size={16} />
         </button>
@@ -214,19 +230,34 @@ export default function Reader({ onToast }: Props) {
           }
           disabled={extract.isPending}
           title={hasExtracted ? t("reader.tbToggleFullText") : t("reader.tbExtractFullText")}
+          aria-label={hasExtracted ? t("reader.tbToggleFullText") : t("reader.tbExtractFullText")}
+          aria-pressed={hasExtracted ? showExtracted : undefined}
+          aria-busy={extract.isPending}
         >
           <Icon name="text" size={16} />
         </button>
-        <button className="tb-btn" title={t("reader.tbCopyLink")} onClick={copyLink}>
+        <button
+          className="tb-btn"
+          title={t("reader.tbCopyLink")}
+          aria-label={t("reader.tbCopyLink")}
+          onClick={copyLink}
+        >
           <Icon name="copy" size={16} />
         </button>
-        <button className="tb-btn" title={t("reader.tbShare")} onClick={share}>
+        <button
+          className="tb-btn"
+          title={t("reader.tbShare")}
+          aria-label={t("reader.tbShare")}
+          onClick={share}
+        >
           <Icon name="share" size={16} />
         </button>
         <button
           className={`tb-btn ${focusMode ? "on" : ""}`}
           onClick={() => setFocusMode(!focusMode)}
           title={t("reader.tbFocusMode")}
+          aria-label={t("reader.tbFocusMode")}
+          aria-pressed={focusMode}
         >
           <Icon name="focus" size={16} />
         </button>
@@ -235,6 +266,7 @@ export default function Reader({ onToast }: Props) {
           <button
             className="tb-btn"
             title={t("reader.tbOpenInBrowser")}
+            aria-label={t("reader.tbOpenInBrowser")}
             onClick={() => openUrl(a.url!).catch(() => {})}
           >
             <Icon name="open" size={16} />

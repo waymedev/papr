@@ -101,44 +101,52 @@ pub async fn refresh_all(
         let mut new_here = 0usize;
         let mut error: Option<String> = None;
 
-        {
-            let conn = state.db.lock().await;
-            match outcome {
-                Outcome::NotModified => {
-                    let _ = db::touch_feed(&conn, feed_id);
-                }
-                Outcome::Failed(e) => {
-                    let _ = db::set_feed_error(&conn, feed_id, &e);
-                    error = Some(e);
-                }
-                Outcome::Updated {
-                    parsed,
-                    etag,
-                    last_modified,
-                } => {
-                    for article in &parsed.articles {
-                        if db::upsert_article(&conn, feed_id, article, dedup, &rules)
-                            .unwrap_or(false)
-                        {
-                            new_here += 1;
+        match outcome {
+            Outcome::NotModified => {
+                let conn = state.db.lock().await;
+                let _ = db::touch_feed(&conn, feed_id);
+            }
+            Outcome::Failed(e) => {
+                let conn = state.db.lock().await;
+                let _ = db::set_feed_error(&conn, feed_id, &e);
+                error = Some(e);
+            }
+            Outcome::Updated {
+                parsed,
+                etag,
+                last_modified,
+            } => {
+                // Insert in bounded chunks, releasing the shared DB lock
+                // between each so concurrent UI queries aren't starved while
+                // a large feed (hundreds of items) is being ingested.
+                for chunk in parsed.articles.chunks(64) {
+                    let conn = state.db.lock().await;
+                    for article in chunk {
+                        match db::upsert_article(&conn, feed_id, article, dedup, &rules) {
+                            Ok(true) => new_here += 1,
+                            Ok(false) => {}
+                            Err(e) => log::warn!(
+                                "upsert_article failed (feed {feed_id}): {e}"
+                            ),
                         }
                     }
-                    let _ = db::update_feed_meta(
-                        &conn,
-                        feed_id,
-                        parsed.title.as_deref(),
-                        parsed.site_url.as_deref(),
-                        parsed.description.as_deref(),
-                        parsed.icon.as_deref(),
-                    );
-                    let _ = db::set_feed_fetch_state(
-                        &conn,
-                        feed_id,
-                        etag.as_deref(),
-                        last_modified.as_deref(),
-                        None,
-                    );
                 }
+                let conn = state.db.lock().await;
+                let _ = db::update_feed_meta(
+                    &conn,
+                    feed_id,
+                    parsed.title.as_deref(),
+                    parsed.site_url.as_deref(),
+                    parsed.description.as_deref(),
+                    parsed.icon.as_deref(),
+                );
+                let _ = db::set_feed_fetch_state(
+                    &conn,
+                    feed_id,
+                    etag.as_deref(),
+                    last_modified.as_deref(),
+                    None,
+                );
             }
         }
 
@@ -153,11 +161,33 @@ pub async fn refresh_all(
     }
 
     // Retention: drop old read articles when a finite window is configured.
+    // The DELETE scans the whole table, so throttle it to once per day rather
+    // than running on every refresh cycle.
     {
         let conn = state.db.lock().await;
         let retention = db::get_setting(&conn, "retention_days").ok().flatten();
         if let Some(days) = retention.and_then(|v| v.parse::<i64>().ok()) {
-            let _ = db::cleanup_old_articles(&conn, days);
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            let last_run = db::get_setting(&conn, "retention_last_run")
+                .ok()
+                .flatten()
+                .and_then(|v| v.parse::<i64>().ok())
+                .unwrap_or(0);
+            if now - last_run >= 86_400 {
+                match db::cleanup_old_articles(&conn, days) {
+                    Ok(removed) => {
+                        if removed > 0 {
+                            log::info!("retention: removed {removed} old articles");
+                        }
+                        let _ =
+                            db::set_setting(&conn, "retention_last_run", &now.to_string());
+                    }
+                    Err(e) => log::warn!("retention cleanup failed: {e}"),
+                }
+            }
         }
     }
 

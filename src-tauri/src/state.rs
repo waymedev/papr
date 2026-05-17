@@ -19,7 +19,20 @@ pub struct AppState {
 
 impl AppState {
     /// Clone the current HTTP client out for use.
+    ///
+    /// The lock is never held across an `.await`, but a panic elsewhere could
+    /// still poison it. The guarded `Client` is `Arc`-backed and immutable, so
+    /// poisoning carries no torn state — recover the guard rather than
+    /// propagating the panic and taking the whole backend down.
     pub fn http(&self) -> Client {
-        self.http.read().expect("http lock poisoned").clone()
+        self.http
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    /// Swap in a freshly built HTTP client (e.g. after a proxy/timeout change).
+    pub fn set_http(&self, client: Client) {
+        *self.http.write().unwrap_or_else(|e| e.into_inner()) = client;
     }
 }

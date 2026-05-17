@@ -153,12 +153,12 @@ export default function App() {
   const markAllRead = useCallback(async () => {
     try {
       const n = await api.markAllRead(useUi.getState().query);
-      await qc.invalidateQueries();
+      actions.refreshAfterBulk();
       showToast(n > 0 ? t("app.markedRead", { count: n }) : t("app.nothingToMark"));
     } catch (e) {
       showToast(errorText(e));
     }
-  }, [qc, showToast]);
+  }, [actions, showToast, t]);
 
   const openSettings = (section?: string) => setSettings({ open: true, section });
 

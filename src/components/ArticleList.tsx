@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -26,7 +26,6 @@ interface Hover {
 
 export default function ArticleList({ onToast }: Props) {
   const { t } = useTranslation();
-  const qc = useQueryClient();
   const actions = useArticleActions();
   const query = useUi((s) => s.query);
   const queryLabel = useUi((s) => s.queryLabel);
@@ -111,7 +110,7 @@ export default function ArticleList({ onToast }: Props) {
   const markAll = async () => {
     try {
       const n = await api.markAllRead(query);
-      await qc.invalidateQueries();
+      actions.refreshAfterBulk();
       onToast(
         n > 0
           ? t("articleList.markedReadToast", { count: n })

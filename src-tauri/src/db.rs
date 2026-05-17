@@ -444,7 +444,11 @@ pub fn upsert_article(
             _ => {}
         }
     }
-    let n = conn.execute(
+    // The article row, its FTS index entry, and its enclosures must land
+    // together — a partial insert leaves an unsearchable or enclosure-less
+    // article. Wrap them in a transaction so a mid-loop failure rolls back.
+    let tx = conn.unchecked_transaction()?;
+    let n = tx.execute(
         "INSERT INTO articles
             (feed_id, guid, url, title, author, summary, content_html, body_text,
              image_url, published_at, is_read, is_starred)
@@ -459,17 +463,18 @@ pub fn upsert_article(
     if n == 0 {
         return Ok(false);
     }
-    let id = conn.last_insert_rowid();
-    conn.execute(
+    let id = tx.last_insert_rowid();
+    tx.execute(
         "INSERT INTO articles_fts(rowid, title, body) VALUES (?1, ?2, ?3)",
         params![id, a.title, a.body_text],
     )?;
     for e in &a.enclosures {
-        conn.execute(
+        tx.execute(
             "INSERT INTO enclosures(article_id, url, mime_type, length) VALUES (?1,?2,?3,?4)",
             params![id, e.url, e.mime_type, e.length],
         )?;
     }
+    tx.commit()?;
     Ok(true)
 }
 
@@ -1079,17 +1084,33 @@ pub fn pending_sync_article_ids(conn: &Connection) -> AppResult<Vec<i64>> {
     Ok(ids)
 }
 
-/// Drain pushable queue entries as `(remote_id, field, value)`. Only rows whose
-/// article already has a remote id are returned and removed; the rest wait for
-/// a pull to assign one.
-pub fn take_sync_queue(conn: &Connection) -> AppResult<Vec<(String, String, bool)>> {
+/// One pushable change drained from the sync queue.
+pub struct SyncEntry {
+    pub article_id: i64,
+    pub remote_id: String,
+    pub field: String,
+    pub value: bool,
+}
+
+/// Drain pushable queue entries. Only rows whose article already has a remote
+/// id are returned and removed; the rest wait for a pull to assign one. The
+/// caller MUST re-queue any entry whose push fails (see `requeue_sync`) so a
+/// network blip never silently drops a local change.
+pub fn take_sync_queue(conn: &Connection) -> AppResult<Vec<SyncEntry>> {
     let mut stmt = conn.prepare(
-        "SELECT a.remote_id, q.field, q.value
+        "SELECT q.article_id, a.remote_id, q.field, q.value
          FROM sync_queue q JOIN articles a ON a.id = q.article_id
          WHERE a.remote_id IS NOT NULL",
     )?;
-    let rows: Vec<(String, String, bool)> = stmt
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? != 0)))?
+    let rows: Vec<SyncEntry> = stmt
+        .query_map([], |r| {
+            Ok(SyncEntry {
+                article_id: r.get(0)?,
+                remote_id: r.get(1)?,
+                field: r.get(2)?,
+                value: r.get::<_, i64>(3)? != 0,
+            })
+        })?
         .collect::<Result<_, _>>()?;
     drop(stmt);
     conn.execute(
@@ -1098,4 +1119,15 @@ pub fn take_sync_queue(conn: &Connection) -> AppResult<Vec<(String, String, bool
         [],
     )?;
     Ok(rows)
+}
+
+/// Re-insert a queue entry whose push failed. Unlike `enqueue_sync` this does
+/// not clobber a newer edit the user made on the same article during the sync.
+pub fn requeue_sync(conn: &Connection, article_id: i64, field: &str, value: bool) -> AppResult<()> {
+    conn.execute(
+        "INSERT INTO sync_queue(article_id, field, value) VALUES (?1, ?2, ?3)
+         ON CONFLICT(article_id, field) DO NOTHING",
+        params![article_id, field, value],
+    )?;
+    Ok(())
 }

@@ -176,24 +176,44 @@ pub async fn sync_now(app: &AppHandle) -> AppResult<usize> {
     let http = app.state::<AppState>().http();
     let session = login(&http, &base, &user, &pass).await?;
 
-    // 1 ── push: flush queued local read/starred changes.
+    // 1 ── push: flush queued local read/starred changes. `take_sync_queue`
+    // removes the rows up front, so any push that fails must be re-queued —
+    // otherwise a network blip silently drops the user's change forever.
     let queue = {
         let state = app.state::<AppState>();
         let conn = state.db.lock().await;
         db::take_sync_queue(&conn)?
     };
-    for (remote_id, field, value) in queue {
-        let tag = if field == "starred" { STARRED_TAG } else { READ_TAG };
-        let action = if value { "a" } else { "r" };
-        let _ = session
+    let mut failed: Vec<db::SyncEntry> = Vec::new();
+    for entry in queue {
+        let tag = if entry.field == "starred" {
+            STARRED_TAG
+        } else {
+            READ_TAG
+        };
+        let action = if entry.value { "a" } else { "r" };
+        let pushed = session
             .post(&http, "edit-tag")
             .form(&[
-                ("i", remote_id.as_str()),
+                ("i", entry.remote_id.as_str()),
                 (action, tag),
                 ("T", session.token.as_str()),
             ])
             .send()
-            .await;
+            .await
+            .and_then(|r| r.error_for_status())
+            .is_ok();
+        if !pushed {
+            failed.push(entry);
+        }
+    }
+    if !failed.is_empty() {
+        log::warn!("sync: {} change(s) failed to push, re-queued", failed.len());
+        let state = app.state::<AppState>();
+        let conn = state.db.lock().await;
+        for entry in &failed {
+            let _ = db::requeue_sync(&conn, entry.article_id, &entry.field, entry.value);
+        }
     }
 
     // 2 ── pull subscriptions: subscribe locally to any feed we don't have.

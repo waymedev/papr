@@ -159,7 +159,13 @@ async fn consume_sse(
             };
             if let Some(text) = extract_delta(&value, provider) {
                 full.push_str(&text);
-                let _ = channel.send(AiEvent::Delta(text));
+                // A send failure means the frontend dropped the channel (the
+                // user closed the AI panel). Stop streaming instead of
+                // downloading the rest of the response into a void.
+                if channel.send(AiEvent::Delta(text)).is_err() {
+                    log::debug!("AI stream channel closed; aborting early");
+                    return Ok(full);
+                }
             }
         }
     }

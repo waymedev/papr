@@ -545,7 +545,7 @@ pub async fn apply_network_settings(state: State<'_, AppState>) -> AppResult<()>
         let conn = state.db.lock().await;
         fetch::build_client_from_settings(&conn)
     };
-    *state.http.write().expect("http lock poisoned") = client;
+    state.set_http(client);
     Ok(())
 }
 

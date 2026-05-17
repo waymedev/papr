@@ -24,12 +24,13 @@ export function useArticleActions() {
         ),
       };
     });
-    // Flat hybrid-search results.
-    qc.setQueriesData({ queryKey: ["search"] }, (old: any) =>
+    // Flat result arrays: hybrid search and the command-palette search.
+    const patchFlat = (old: any) =>
       Array.isArray(old)
         ? old.map((x: ArticleSummary) => (x.id === id ? { ...x, ...p } : x))
-        : old,
-    );
+        : old;
+    qc.setQueriesData({ queryKey: ["search"] }, patchFlat);
+    qc.setQueriesData({ queryKey: ["cp-search"] }, patchFlat);
     // The open article detail.
     qc.setQueryData(["article", id], (old: any) =>
       old ? { ...old, ...p } : old,
@@ -48,10 +49,31 @@ export function useArticleActions() {
     // rows out of the list the user is currently looking at.
     qc.invalidateQueries({ queryKey: ["articles"], refetchType: "none" });
     qc.invalidateQueries({ queryKey: ["search"], refetchType: "none" });
+    qc.invalidateQueries({ queryKey: ["cp-search"], refetchType: "none" });
+  };
+
+  // After a bulk operation (mark-all-read) potentially every article's state
+  // changed, so optimistic patching can't cover it — but a bare
+  // `invalidateQueries()` would also refetch unrelated caches (AI summaries,
+  // settings, storage stats). Invalidate only the article-bearing keys.
+  const refreshAfterBulk = () => {
+    for (const key of [
+      ["counts"],
+      ["feeds"],
+      ["folders"],
+      ["tags"],
+      ["articles"],
+      ["article"],
+      ["search"],
+      ["cp-search"],
+    ]) {
+      qc.invalidateQueries({ queryKey: key });
+    }
   };
 
   return {
     patch,
+    refreshAfterBulk,
     async setRead(id: number, read: boolean) {
       await api.markRead(id, read);
       patch(id, { isRead: read });
