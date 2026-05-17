@@ -60,6 +60,7 @@ export default function CommandPalette({
   const [debounced, setDebounced] = useState("");
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (open) {
@@ -145,6 +146,13 @@ export default function CommandPalette({
     if (active >= items.length) setActive(0);
   }, [items.length, active]);
 
+  // Keep the keyboard-selected row visible when arrowing past the fold.
+  useEffect(() => {
+    listRef.current
+      ?.querySelector<HTMLElement>(`[data-cp-index="${active}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [active]);
+
   if (!open) return null;
 
   const run = (it: Item) => {
@@ -182,6 +190,7 @@ export default function CommandPalette({
           return (
             <div
               key={it.id}
+              data-cp-index={idx}
               className={`cp-item ${idx === active ? "active" : ""}`}
               onMouseEnter={() => setActive(idx)}
               onClick={() => run(it)}
@@ -220,7 +229,7 @@ export default function CommandPalette({
           />
           <span className="cp-esc">ESC</span>
         </div>
-        <div className="cp-list">
+        <div className="cp-list" ref={listRef}>
           {items.length === 0 ? (
             <div className="cp-empty">
               {articleResults.isFetching
