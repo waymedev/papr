@@ -13,6 +13,11 @@
     "retry": "Retry",
     "justNow": "just now"
   },
+  "crash": {
+    "title": "Something went wrong",
+    "body": "The app hit an unexpected error.",
+    "reload": "Reload"
+  },
   "tagPicker": {
     "title": "Tag this article",
     "empty": "No tags yet — create one below.",

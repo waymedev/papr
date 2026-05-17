@@ -13,6 +13,11 @@
     "retry": "重试",
     "justNow": "刚刚"
   },
+  "crash": {
+    "title": "出了点问题",
+    "body": "应用遇到意外错误。",
+    "reload": "重新加载"
+  },
   "tagPicker": {
     "title": "为这篇文章打标签",
     "empty": "还没有标签——在下方新建一个。",
