@@ -66,6 +66,21 @@ pub async fn refresh_all(
 ) -> AppResult<usize> {
     let state = app.state::<AppState>();
 
+    // Only one refresh at a time: the manual command and the periodic
+    // scheduler would otherwise duplicate every fetch. A second caller bows
+    // out cleanly rather than queueing another full pass.
+    let _refresh_guard = match state.refresh_lock.try_lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            log::debug!("refresh already in progress; skipping this run");
+            if let Some(p) = &progress {
+                let _ = p.send(RefreshProgress::Started { total: 0 });
+                let _ = p.send(RefreshProgress::Finished { new_articles: 0 });
+            }
+            return Ok(0);
+        }
+    };
+
     let (feeds, concurrency, dedup, rules) = {
         let conn = state.db.lock().await;
         let feeds = db::feeds_to_refresh(&conn)?;

@@ -24,6 +24,10 @@ pub struct AppState {
     /// it without an app restart. The lock is only ever held to clone the
     /// (cheap, `Arc`-backed) client out — never across an `.await`.
     pub http: RwLock<Client>,
+    /// Held for the duration of a `refresh_all` run. The manual refresh
+    /// command and the periodic scheduler can otherwise fire concurrently —
+    /// `try_lock` lets a second run bow out instead of duplicating the work.
+    pub refresh_lock: Mutex<()>,
 }
 
 impl AppState {
@@ -35,6 +39,7 @@ impl AppState {
             readers: readers.into_iter().map(Mutex::new).collect(),
             next_reader: AtomicUsize::new(0),
             http: RwLock::new(http),
+            refresh_lock: Mutex::new(()),
         }
     }
 
