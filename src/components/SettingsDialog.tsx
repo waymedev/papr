@@ -801,6 +801,7 @@ function SubscriptionsSection({
 function SyncSection({ onToast }: { onToast: (m: string) => void }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
+  const actions = useArticleActions();
   const status = useQuery({
     queryKey: ["freshrss-status"],
     queryFn: api.freshrssStatus,
@@ -843,7 +844,9 @@ function SyncSection({ onToast }: { onToast: (m: string) => void }) {
     setBusy(true);
     try {
       const n = await api.freshrssSync();
-      await qc.invalidateQueries();
+      // Sync reconciles read/starred state and may add feeds — refresh the
+      // article-bearing caches, not unrelated ones (AI summaries, settings).
+      actions.refreshAfterBulk();
       onToast(t("settings.sync.syncDone", { count: n }));
     } catch (e) {
       onToast(errorText(e));
