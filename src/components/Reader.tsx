@@ -354,8 +354,11 @@ export default function Reader({ onToast }: Props) {
           {ytId ? (
             <iframe
               style={{ width: "100%", aspectRatio: "16 / 9" }}
-              src={`https://www.youtube.com/embed/${ytId}`}
+              // Privacy-enhanced host: YouTube sets no tracking cookies
+              // until the viewer actually starts the video.
+              src={`https://www.youtube-nocookie.com/embed/${ytId}`}
               title={a.title}
+              referrerPolicy="strict-origin-when-cross-origin"
               allowFullScreen
             />
           ) : (
