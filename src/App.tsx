@@ -29,7 +29,9 @@ const ACCENTS: Record<
   ink: { accent: "oklch(0.30 0.02 50)", soft: "oklch(0.92 0.005 50)", ink: "oklch(0.20 0.01 50)", dAccent: "oklch(0.86 0.005 50)", dSoft: "oklch(0.30 0.005 50)", dInk: "oklch(0.92 0.005 50)" },
 };
 
-type Toast = { text: string; kbd?: string };
+// `id` is stamped once per toast so the render key is stable across unrelated
+// re-renders — keying on `Date.now()` would remount and replay the animation.
+type Toast = { text: string; kbd?: string; id: number };
 
 export default function App() {
   const { t } = useTranslation();
@@ -109,7 +111,7 @@ export default function App() {
 
   // ── toast ──
   const showToast = useCallback((text: string, kbd?: string) => {
-    setToast({ text, kbd });
+    setToast({ text, kbd, id: Date.now() });
     window.clearTimeout(toastTimer.current);
     toastTimer.current = window.setTimeout(() => setToast(null), 1900);
   }, []);
@@ -343,7 +345,7 @@ export default function App() {
       )}
 
       {toast && (
-        <div className="toast" key={toast.text + Date.now()}>
+        <div className="toast" key={toast.id}>
           {toast.text}
           {toast.kbd && <kbd>{toast.kbd}</kbd>}
         </div>
