@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { cloneElement, isValidElement, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import * as api from "../api";
@@ -153,13 +153,21 @@ function Row({
   desc?: string;
   children: React.ReactNode;
 }) {
+  // Name the row's control with the row label so screen readers don't just
+  // announce a bare "checkbox" / "slider" / "combobox". The control
+  // components forward the injected aria-label to their element.
+  const control = isValidElement(children)
+    ? cloneElement(children as React.ReactElement<{ "aria-label"?: string }>, {
+        "aria-label": label,
+      })
+    : children;
   return (
     <div className="settings-row">
       <div className="settings-row-text">
         <div className="settings-row-label">{label}</div>
         {desc && <div className="settings-row-desc">{desc}</div>}
       </div>
-      <div className="settings-row-control">{children}</div>
+      <div className="settings-row-control">{control}</div>
     </div>
   );
 }
@@ -167,15 +175,18 @@ function Row({
 function Toggle({
   checked,
   onChange,
+  "aria-label": ariaLabel,
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
+  "aria-label"?: string;
 }) {
   return (
     <input
       type="checkbox"
       className="s-toggle"
       checked={checked}
+      aria-label={ariaLabel}
       onChange={(e) => onChange(e.target.checked)}
     />
   );
@@ -185,15 +196,18 @@ function Select<T extends string>({
   value,
   options,
   onChange,
+  "aria-label": ariaLabel,
 }: {
   value: T;
   options: { value: T; label: string }[];
   onChange: (v: T) => void;
+  "aria-label"?: string;
 }) {
   return (
     <select
       className="s-select"
       value={value}
+      aria-label={ariaLabel}
       onChange={(e) => onChange(e.target.value as T)}
     >
       {options.map((o) => (
@@ -209,13 +223,15 @@ function Segmented<T extends string>({
   value,
   options,
   onChange,
+  "aria-label": ariaLabel,
 }: {
   value: T;
   options: { value: T; label: string }[];
   onChange: (v: T) => void;
+  "aria-label"?: string;
 }) {
   return (
-    <div className="s-seg">
+    <div className="s-seg" role="group" aria-label={ariaLabel}>
       {options.map((o) => (
         <button
           key={o.value}
@@ -238,6 +254,7 @@ function Slider({
   unit = "",
   onChange,
   onCommit,
+  "aria-label": ariaLabel,
 }: {
   value: number;
   min: number;
@@ -249,6 +266,7 @@ function Slider({
   /** Fires once the drag/keypress settles — for costly side effects (a backend
    *  write, an HTTP-client rebuild) that must not run ~20× across one drag. */
   onCommit?: (v: number) => void;
+  "aria-label"?: string;
 }) {
   const [draft, setDraft] = useState(value);
   // Follow external changes (async settings load, reset) when not mid-drag.
@@ -262,6 +280,8 @@ function Slider({
         max={max}
         step={step}
         value={draft}
+        aria-label={ariaLabel}
+        aria-valuetext={`${draft}${unit}`}
         onChange={(e) => {
           const v = Number(e.target.value);
           setDraft(v);
@@ -517,7 +537,7 @@ function AppearanceSection() {
           label={t("settings.appearance.accent")}
           desc={t("settings.appearance.accentDesc")}
         >
-          <div className="s-swatches">
+          <div className="s-swatches" role="group">
             {accents.map((a) => (
               <button
                 key={a.value}
