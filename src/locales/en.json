@@ -388,6 +388,7 @@
     "feeds": "Feeds",
     "addFeed": "Add feed",
     "emptyHint": "No feeds yet. Click + to add one.",
+    "feedError": "Update failed",
     "uncategorized": "Uncategorized",
     "moveToFolder": "Move to “{{folder}}”",
     "moveOutOfFolder": "Move out of folder",

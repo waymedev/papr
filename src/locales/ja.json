@@ -388,6 +388,7 @@
     "feeds": "フィード",
     "addFeed": "フィードを追加",
     "emptyHint": "フィードがまだありません。+ をクリックして追加してください。",
+    "feedError": "更新に失敗しました",
     "uncategorized": "未分類",
     "moveToFolder": "「{{folder}}」へ移動",
     "moveOutOfFolder": "フォルダから移動",

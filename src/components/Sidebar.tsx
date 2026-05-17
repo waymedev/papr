@@ -311,7 +311,11 @@ export default function Sidebar({
     >
       <FeedAvatar title={f.title} faviconUrl={f.faviconUrl} seed={f.id} />
       <span className="sb-label">{f.title}</span>
-      {f.fetchError && <span className="sb-warn">!</span>}
+      {f.fetchError && (
+        <span className="sb-warn" role="img" aria-label={t("sidebar.feedError")}>
+          !
+        </span>
+      )}
       {showCounts && f.unreadCount > 0 && (
         <span className="sb-count">{f.unreadCount}</span>
       )}
