@@ -1463,19 +1463,12 @@ button { font-family: inherit; }
   margin: 1.2em 0;
   display: block;
 }
-.article-body iframe,
-.article-body video {
-  max-width: 100%;
-  border-radius: 8px;
-  margin: 1.2em 0;
-  border: 1px solid var(--hair);
-}
 .article-body table { border-collapse: collapse; width: 100%; margin: 1.2em 0; font-size: 0.92em; }
 .article-body th, .article-body td { border: 1px solid var(--hair); padding: 6px 10px; }
 
 /* enclosure (audio / video) */
 .enclosure { margin: 1.4em 0; }
-.enclosure audio, .enclosure video { width: 100%; }
+.enclosure video { width: 100%; }
 
 /* article reading-progress hairline */
 .read-progress-track {
