@@ -175,7 +175,7 @@ export default function Reader({ onToast }: Props) {
       borderRadius: 3,
     };
     return (
-      <div className="reader">
+      <div className="reader" role="main">
         <div className="reader-toolbar" data-tauri-drag-region />
         <div className="empty" style={{ flex: 1 }}>
           <div className="glyph">
@@ -196,7 +196,7 @@ export default function Reader({ onToast }: Props) {
   // to the "select an article" empty state, which would be misleading.
   if (!a) {
     return (
-      <div className="reader">
+      <div className="reader" role="main">
         <div className="reader-toolbar" data-tauri-drag-region />
         {article.isError ? (
           <div className="empty" style={{ flex: 1 }}>
@@ -245,7 +245,7 @@ export default function Reader({ onToast }: Props) {
   const ytId = a.sourceType === "youtube" ? youtubeId(a.url) : null;
 
   return (
-    <div className="reader">
+    <div className="reader" role="main">
       <div
         className={`reader-toolbar ${scrolled ? "scrolled" : ""}`}
         data-tauri-drag-region
