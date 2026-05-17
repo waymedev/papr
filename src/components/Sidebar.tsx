@@ -379,7 +379,10 @@ export default function Sidebar({
     <div className="sidebar" role="navigation">
       <div className="titlebar" data-tauri-drag-region />
 
-      <div style={{ height: 38 }} />
+      <div className="sb-brand">
+        <img className="sb-brand-mark" src="/papr.svg" alt="" />
+        <span className="sb-brand-name">Papr</span>
+      </div>
 
       <div
         className="sidebar-search"

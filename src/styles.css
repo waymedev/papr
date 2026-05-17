@@ -128,6 +128,28 @@ button { font-family: inherit; }
   min-height: 0;
 }
 
+.sb-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 19px 12px 10px;
+  height: 30px;
+  flex-shrink: 0;
+  user-select: none;
+}
+.sb-brand-mark {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+}
+.sb-brand-name {
+  font-family: var(--serif);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
 .sidebar-search {
   margin: 6px 12px 10px;
   height: 28px;
