@@ -1008,13 +1008,14 @@ pub fn storage_stats(conn: &Connection) -> AppResult<(i64, i64, i64)> {
 }
 
 /// Delete read articles older than `days`, keeping starred / read-later ones.
-/// Returns the number removed.
+/// Returns the number removed. Age is the effective date —
+/// COALESCE(published_at, fetched_at) — so a dateless article is retained by
+/// fetch age rather than living forever (fetched_at is never NULL).
 pub fn cleanup_old_articles(conn: &Connection, days: i64) -> AppResult<usize> {
     Ok(conn.execute(
         "DELETE FROM articles
          WHERE is_starred = 0 AND read_later = 0 AND is_read = 1
-           AND published_at IS NOT NULL
-           AND published_at < datetime('now', ?1)",
+           AND COALESCE(published_at, fetched_at) < datetime('now', ?1)",
         params![format!("-{days} days")],
     )?)
 }
