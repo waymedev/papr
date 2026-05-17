@@ -2,7 +2,7 @@
 //! and source-type detection for the multi-source aggregation feature.
 
 use crate::db::NewArticle;
-use crate::error::{AppError, AppResult};
+use crate::error::AppResult;
 use crate::models::{Enclosure, SourceType};
 use crate::sanitize;
 use feed_rs::model::{Entry, Feed as RawFeed};
@@ -204,6 +204,3 @@ pub fn discover_feeds(html: &str, page_url: &str) -> Vec<String> {
 pub fn looks_like_feed(bytes: &[u8]) -> bool {
     feed_rs::parser::parse(bytes).is_ok()
 }
-
-#[allow(dead_code)]
-fn _unused(_: &AppError) {}
