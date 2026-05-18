@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import * as api from "../api";
+import { useDismiss } from "../hooks/useDismiss";
 import { errorText } from "../lib/errors";
 import { tagColor } from "../lib/tagColors";
 import { clampToViewport } from "../lib/viewport";
@@ -38,31 +39,10 @@ export default function TagPicker({
   const tags = useQuery({ queryKey: ["tags"], queryFn: api.listTags });
   const attachedSet = new Set(attached);
 
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose();
-    };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    // Tabbing past the popover's last control should dismiss it, the way a
-    // click outside does — otherwise it floats over the page, orphaned from
-    // the keyboard. A null relatedTarget (focus fell to <body>, e.g. a row
-    // re-rendered away) is left to the outside-click / Escape paths instead.
-    const onFocusOut = (e: FocusEvent) => {
-      const next = e.relatedTarget as Node | null;
-      if (next && !ref.current?.contains(next)) onClose();
-    };
-    const timer = window.setTimeout(() => {
-      document.addEventListener("mousedown", onDown);
-      window.addEventListener("keydown", onKey);
-      document.addEventListener("focusout", onFocusOut);
-    }, 0);
-    return () => {
-      window.clearTimeout(timer);
-      document.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
-      document.removeEventListener("focusout", onFocusOut);
-    };
-  }, [onClose]);
+  // Tabbing past the popover's last control dismisses it, the way a click
+  // outside does — otherwise it floats over the page, orphaned from the
+  // keyboard.
+  useDismiss(ref, onClose, { onFocusOut: true });
 
   // Move focus into the popover on open so it is keyboard-reachable, and
   // restore it to the trigger (the toolbar tag button) on close.

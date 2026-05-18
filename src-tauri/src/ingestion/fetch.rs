@@ -59,11 +59,7 @@ pub fn build_client(timeout_secs: u64, proxy: &str) -> Client {
 
 /// Build the HTTP client from the persisted network settings.
 pub fn build_client_from_settings(conn: &Connection) -> Client {
-    let timeout = db::get_setting(conn, "net_timeout_sec")
-        .ok()
-        .flatten()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(30);
+    let timeout = db::setting_parsed::<u64>(conn, "net_timeout_sec", 30);
     let proxy = db::get_setting(conn, "net_proxy")
         .ok()
         .flatten()

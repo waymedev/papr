@@ -81,19 +81,28 @@ pub fn youtube_feed_url(channel_id: &str) -> String {
     format!("https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}")
 }
 
+/// True for the URL-safe id characters YouTube uses in channel/playlist ids:
+/// ASCII alphanumerics plus `_` and `-`.
+fn is_id_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '_' || c == '-'
+}
+
+/// Split a URL path into its non-empty segments.
+fn path_segments(path: &str) -> Vec<&str> {
+    path.split('/').filter(|s| !s.is_empty()).collect()
+}
+
 /// True if `id` looks like a YouTube channel id (`UC` + 22 chars).
 fn is_channel_id(id: &str) -> bool {
     id.len() == 24
         && id.starts_with("UC")
-        && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+        && id.chars().all(is_id_char)
 }
 
 /// True if `id` looks like a YouTube playlist id (`PL`, `UU`, `LL`, `FL`, …).
 fn is_playlist_id(id: &str) -> bool {
     (id.len() >= 13)
-        && id
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+        && id.chars().all(is_id_char)
         && (id.starts_with("PL")
             || id.starts_with("UU")
             || id.starts_with("LL")
@@ -121,7 +130,7 @@ fn normalize_youtube(host: &str, path: &str, url: &Url) -> Normalized {
         }
     }
 
-    let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    let segments = path_segments(path);
 
     // `youtube.com/channel/UC…` — the channel id is right there in the path.
     if segments.len() >= 2 && segments[0] == "channel" && is_channel_id(segments[1]) {
@@ -151,7 +160,7 @@ fn normalize_youtube(host: &str, path: &str, url: &Url) -> Normalized {
 /// Extract `r/SUBREDDIT` from a Reddit path and build its `.rss` feed URL.
 /// Handles `/r/SUB`, `/r/SUB/`, `/r/SUB/top`, `/r/SUB/.rss`, etc.
 fn normalize_reddit(path: &str) -> Option<String> {
-    let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    let segments = path_segments(path);
     if segments.len() < 2 || segments[0] != "r" {
         return None;
     }
@@ -183,7 +192,7 @@ fn normalize_reddit(path: &str) -> Option<String> {
 /// Recognize a Mastodon profile URL (`https://instance/@user`) and append the
 /// `.rss` suffix Mastodon exposes for every account's public timeline.
 fn normalize_mastodon(full_url: &str, path: &str) -> Option<String> {
-    let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    let segments = path_segments(path);
     // A Mastodon profile is exactly one path segment, starting with `@`.
     if segments.len() != 1 {
         return None;
@@ -238,14 +247,8 @@ pub fn extract_channel_id(html: &str) -> Option<String> {
     }
 
     // 3. A bare `/channel/UC...` substring anywhere (e.g. og:url meta tag).
-    if let Some(rest) = html.split("/channel/").nth(1) {
-        let id: String = rest
-            .chars()
-            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
-            .collect();
-        if is_channel_id(&id) {
-            return Some(id);
-        }
+    if let Some(id) = channel_id_after_marker(html) {
+        return Some(id);
     }
 
     // 4. Last resort: the plain `"channelId"` JSON key. Ambiguous (also used
@@ -257,6 +260,15 @@ pub fn extract_channel_id(html: &str) -> Option<String> {
     }
 
     None
+}
+
+/// Pull a valid channel id out of the text following the first `/channel/`
+/// marker in `text` — used for both bare `/channel/UC…` substrings and the
+/// `href` of a `<link rel="canonical">` tag.
+fn channel_id_after_marker(text: &str) -> Option<String> {
+    let rest = text.split("/channel/").nth(1)?;
+    let id: String = rest.chars().take_while(|c| is_id_char(*c)).collect();
+    is_channel_id(&id).then_some(id)
 }
 
 /// Return the substring of `html` after the first occurrence of `marker`, up to
@@ -293,14 +305,8 @@ fn canonical_channel_id(html: &str) -> Option<String> {
             continue;
         };
         let tag = &html[tag_start..tag_end];
-        if let Some(rest) = tag.split("/channel/").nth(1) {
-            let id: String = rest
-                .chars()
-                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
-                .collect();
-            if is_channel_id(&id) {
-                return Some(id);
-            }
+        if let Some(id) = channel_id_after_marker(tag) {
+            return Some(id);
         }
         search = tag_end;
     }

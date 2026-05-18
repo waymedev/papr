@@ -7,6 +7,7 @@ use crate::models::{Enclosure, SourceType};
 use crate::sanitize;
 use feed_rs::model::{Entry, Feed as RawFeed};
 use scraper::{Html, Selector};
+use std::sync::LazyLock;
 use url::Url;
 
 /// Metadata + articles extracted from a single feed document.
@@ -277,11 +278,12 @@ pub fn refine_source_type(initial: SourceType, parsed: &ParsedFeed, feed_url: &s
 /// Given the HTML of a web page, find `<link rel="alternate">` feed URLs.
 /// Runs synchronously (uses `scraper`); never hold the result across `.await`.
 pub fn discover_feeds(html: &str, page_url: &str) -> Vec<String> {
+    static ALTERNATE: LazyLock<Selector> =
+        LazyLock::new(|| Selector::parse("link[rel~=alternate]").unwrap());
     let doc = Html::parse_document(html);
-    let selector = Selector::parse("link[rel~=alternate]").unwrap();
     let base = Url::parse(page_url).ok();
     let mut found = Vec::new();
-    for el in doc.select(&selector) {
+    for el in doc.select(&ALTERNATE) {
         let ty = el.value().attr("type").unwrap_or("").to_lowercase();
         let is_feed = ty.contains("rss") || ty.contains("atom") || ty.contains("json");
         if !is_feed {

@@ -29,9 +29,11 @@ chrome.runtime.onMessage.addListener(function (msg, sender) {
   }
 });
 
-// Clear the badge when a tab starts navigating — the new page re-reports.
+// Clear the badge when a tab navigates to a new URL — the new page re-reports.
+// Gated on `changeInfo.url` so same-document status flips don't flicker the
+// badge between the old count and 0.
 chrome.tabs.onUpdated.addListener(function (tabId, changeInfo) {
-  if (changeInfo.status === "loading") {
+  if (changeInfo.status === "loading" && changeInfo.url) {
     setBadge(tabId, 0);
   }
 });

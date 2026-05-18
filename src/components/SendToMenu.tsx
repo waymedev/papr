@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import * as api from "../api";
+import { useDismiss } from "../hooks/useDismiss";
 import { useMenuKeyboard } from "../hooks/useMenuKeyboard";
 import { errorText } from "../lib/errors";
 import { clampToViewport } from "../lib/viewport";
@@ -61,22 +62,7 @@ export default function SendToMenu({ articleId, x, y, onClose, onToast }: Props)
       .catch(() => setTargets({ pocket: false, instapaper: false, kindle: false, notion: false }));
   }, []);
 
-  // Outside-click / Escape to dismiss.
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose();
-    };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    const tm = window.setTimeout(() => {
-      document.addEventListener("mousedown", onDown);
-      window.addEventListener("keydown", onKey);
-    }, 0);
-    return () => {
-      window.clearTimeout(tm);
-      document.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [onClose]);
+  useDismiss(ref, onClose);
 
   const send = async (target: ShareTarget) => {
     setBusy(target);
@@ -92,8 +78,7 @@ export default function SendToMenu({ articleId, x, y, onClose, onToast }: Props)
   };
 
   const anyConfigured =
-    targets != null &&
-    (targets.pocket || targets.instapaper || targets.kindle || targets.notion);
+    targets != null && TARGETS.some(({ key }) => targets[key]);
 
   return (
     <div

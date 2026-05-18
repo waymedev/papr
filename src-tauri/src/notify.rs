@@ -1,19 +1,11 @@
 //! System notifications for new articles and the Dock unread badge.
 
 use crate::db;
+use crate::db::setting_flag as flag;
 use crate::state::AppState;
 use chrono::{Local, Timelike};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_notification::NotificationExt;
-
-/// Read a `"1"` / `"0"` boolean setting, falling back to `default`.
-fn flag(conn: &rusqlite::Connection, key: &str, default: bool) -> bool {
-    db::get_setting(conn, key)
-        .ok()
-        .flatten()
-        .map(|v| v == "1" || v == "true")
-        .unwrap_or(default)
-}
 
 /// Refresh the Dock badge to the unread count (or clear it when disabled).
 pub async fn update_badge(app: &AppHandle) {

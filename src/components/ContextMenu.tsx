@@ -1,6 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import Icon, { type IconName } from "./Icon";
 import { clampToViewport } from "../lib/viewport";
+import { useDismiss } from "../hooks/useDismiss";
 import { useMenuKeyboard } from "../hooks/useMenuKeyboard";
 
 export type MenuEntry =
@@ -41,21 +42,7 @@ export default function ContextMenu({ x, y, items, onClose }: Props) {
     setPos(clampToViewport({ x, y, width: r.width, height: r.height, margin: 8 }));
   }, [x, y]);
 
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose();
-    };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    const t = window.setTimeout(() => {
-      document.addEventListener("mousedown", onDown);
-      window.addEventListener("keydown", onKey);
-    }, 0);
-    return () => {
-      window.clearTimeout(t);
-      document.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [onClose]);
+  useDismiss(ref, onClose);
 
   // Focus management on open/close plus Arrow/Home/End/Enter navigation,
   // shared with the other role="menu" popovers.

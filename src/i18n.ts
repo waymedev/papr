@@ -22,7 +22,7 @@ export const LANGUAGES: { code: Language; label: string }[] = [
 ];
 
 const STORAGE_KEY = "language";
-const SUPPORTED: Language[] = ["zh", "en", "ja"];
+const SUPPORTED: Language[] = LANGUAGES.map((l) => l.code);
 
 /** Resolve the startup language: saved choice → system locale → English. */
 export function detectLanguage(): Language {

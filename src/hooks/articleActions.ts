@@ -58,12 +58,12 @@ export function useArticleActions(onError?: (msg: string) => void) {
     qc.invalidateQueries({ queryKey: ["cp-search"], refetchType: "none" });
   };
 
-  // After a bulk operation (mark-all-read) potentially every article's state
-  // changed, so optimistic patching can't cover it — but a bare
+  // The query keys an article-state change can affect. A bare
   // `invalidateQueries()` would also refetch unrelated caches (AI summaries,
-  // settings, storage stats). Invalidate only the article-bearing keys.
-  const refreshAfterBulk = () => {
-    for (const key of [
+  // settings, FreshRSS status, rules, the feed-discovery search), so callers
+  // invalidate only these — plus any `extra` keys.
+  const refreshArticleKeys = (extra: string[][] = []) => {
+    const keys = [
       ["counts"],
       ["feeds"],
       ["folders"],
@@ -72,31 +72,20 @@ export function useArticleActions(onError?: (msg: string) => void) {
       ["article"],
       ["search"],
       ["cp-search"],
-    ]) {
+      ...extra,
+    ];
+    for (const key of keys) {
       qc.invalidateQueries({ queryKey: key });
     }
   };
 
-  // After a manual feed refresh new articles may have arrived and feed/folder/
-  // tag counts shifted. A bare `invalidateQueries()` would also refetch caches
-  // a fetch never touches (FreshRSS status, rules, the feed-discovery search),
-  // so invalidate only the keys a fetch can actually change — the article
-  // keys, plus storage stats (the new articles grow the database).
-  const refreshAfterFetch = () => {
-    for (const key of [
-      ["counts"],
-      ["feeds"],
-      ["folders"],
-      ["tags"],
-      ["articles"],
-      ["article"],
-      ["search"],
-      ["cp-search"],
-      ["storage-stats"],
-    ]) {
-      qc.invalidateQueries({ queryKey: key });
-    }
-  };
+  // After a bulk operation (mark-all-read) potentially every article's state
+  // changed, so optimistic patching can't cover it.
+  const refreshAfterBulk = () => refreshArticleKeys();
+
+  // After a manual feed refresh new articles may have arrived; `storage-stats`
+  // is added because the new articles grow the database.
+  const refreshAfterFetch = () => refreshArticleKeys([["storage-stats"]]);
 
   return {
     patch,

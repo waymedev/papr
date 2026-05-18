@@ -92,7 +92,9 @@ export default function ArticleList({ onToast }: Props) {
     overscan: 8,
   });
 
-  // Load the next page as the end approaches.
+  // Load the next page as the end approaches. Keyed on the last visible index
+  // (a primitive) rather than `getVirtualItems()` — which returns a fresh
+  // array every render and would re-run this effect unconditionally.
   useEffect(() => {
     const last = virt.getVirtualItems().at(-1);
     if (
@@ -103,7 +105,8 @@ export default function ArticleList({ onToast }: Props) {
     ) {
       browse.fetchNextPage();
     }
-  }, [virt.getVirtualItems(), items.length, browse]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [virt.range?.endIndex, items.length, browse.hasNextPage, browse.isFetchingNextPage]);
 
   // Keep the keyboard-selected article visible.
   useEffect(() => {

@@ -117,6 +117,12 @@ export default function PlayerBar() {
     setRate(PLAYBACK_RATES[(i + 1) % PLAYBACK_RATES.length]);
   };
 
+  const playLabel = failed
+    ? t("player.retry")
+    : playing
+      ? t("player.pause")
+      : t("player.play");
+
   return (
     <div className="player-bar">
       <audio
@@ -186,20 +192,8 @@ export default function PlayerBar() {
         <button
           className="player-btn play"
           onClick={toggle}
-          title={
-            failed
-              ? t("player.retry")
-              : playing
-                ? t("player.pause")
-                : t("player.play")
-          }
-          aria-label={
-            failed
-              ? t("player.retry")
-              : playing
-                ? t("player.pause")
-                : t("player.play")
-          }
+          title={playLabel}
+          aria-label={playLabel}
         >
           <Icon name={playing ? "pause" : "play"} size={15} />
         </button>

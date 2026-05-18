@@ -49,8 +49,9 @@ export function feedAvatar(title: string): string {
   // Per-word initials must also be taken by code point: a title like
   // "News 🚀" would otherwise pair the latin "N" with a lone surrogate from
   // the emoji's first UTF-16 unit, rendering the avatar as "N�".
-  if (words.length >= 2 && /[a-zA-Z]/.test(firstCodePoint(words[0])))
-    return (firstCodePoint(words[0]) + firstCodePoint(words[1])).toUpperCase();
+  const firstInitial = words[0] ? firstCodePoint(words[0]) : "";
+  if (words.length >= 2 && /[a-zA-Z]/.test(firstInitial))
+    return (firstInitial + firstCodePoint(words[1])).toUpperCase();
   // Last resort: the first two whole code points — `t.slice(0, 2)` would
   // split an astral-plane character straddling the 2-unit cut.
   return chars.slice(0, 2).join("").toUpperCase();

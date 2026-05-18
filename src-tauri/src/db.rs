@@ -238,9 +238,6 @@ static MIGRATIONS: LazyLock<Migrations> = LazyLock::new(|| {
     ])
 });
 
-/// Open the writer connection: run migrations and set the write-side pragmas.
-/// WAL mode is persisted in the database header, so reader connections opened
-/// afterwards inherit it automatically.
 /// Register Papr's custom SQL scalar functions on a freshly opened connection.
 ///
 /// SQLite's built-in `LOWER()` only case-folds ASCII (it has no Unicode
@@ -266,6 +263,9 @@ fn register_functions(conn: &Connection) -> AppResult<()> {
     Ok(())
 }
 
+/// Open the writer connection: run migrations and set the write-side pragmas.
+/// WAL mode is persisted in the database header, so reader connections opened
+/// afterwards inherit it automatically.
 pub fn open(path: &Path) -> AppResult<Connection> {
     let mut conn = Connection::open(path)?;
     conn.pragma_update(None, "journal_mode", "WAL")?;
@@ -576,7 +576,6 @@ pub fn delete_feed(conn: &Connection, id: i64) -> AppResult<()> {
     Ok(())
 }
 
-/// (title, feed_url, folder_name) for every feed — used to build OPML exports.
 /// Feeds for OPML export as `(title, feed_url, folder)` tuples. Newsletter
 /// sources are excluded: OPML is an RSS-subscription interchange format, and a
 /// newsletter's `feed_url` is a synthetic `imap://user@host:port/folder`
@@ -1676,8 +1675,25 @@ pub fn set_setting(conn: &Connection, key: &str, value: &str) -> AppResult<()> {
     Ok(())
 }
 
-#[allow(dead_code)]
-fn _unused(_: &AppError) {}
+/// Read a setting and parse it as `T`, falling back to `default` when the key
+/// is missing, unreadable, or fails to parse.
+pub fn setting_parsed<T: std::str::FromStr>(conn: &Connection, key: &str, default: T) -> T {
+    get_setting(conn, key)
+        .ok()
+        .flatten()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
+}
+
+/// Read a setting as a boolean flag — `"1"` and `"true"` are true, anything
+/// else (including a missing key) falls back to `default`.
+pub fn setting_flag(conn: &Connection, key: &str, default: bool) -> bool {
+    get_setting(conn, key)
+        .ok()
+        .flatten()
+        .map(|v| v == "1" || v == "true")
+        .unwrap_or(default)
+}
 
 // ─────────────────────────── storage ───────────────────────────
 

@@ -25,6 +25,32 @@ pub const NEWSLETTER_POLL_TIMEOUT_SECS: u64 = 90;
 /// the raw RFC822 message bytes or an error string describing the failure.
 type MailboxPoll = (i64, Result<Vec<Vec<u8>>, String>);
 
+/// Insert a batch of articles for one feed in bounded chunks, releasing the
+/// shared DB lock between each so concurrent UI queries aren't starved while a
+/// large feed (hundreds of items) is being ingested. Returns the count newly
+/// inserted; `label` only distinguishes the warning text (`rss`/`newsletter`).
+async fn upsert_articles(
+    db: &tokio::sync::Mutex<rusqlite::Connection>,
+    feed_id: i64,
+    articles: &[crate::db::NewArticle],
+    dedup: bool,
+    rules: &[crate::models::Rule],
+    label: &str,
+) -> usize {
+    let mut new_count = 0usize;
+    for chunk in articles.chunks(64) {
+        let conn = db.lock().await;
+        for article in chunk {
+            match db::upsert_article(&conn, feed_id, article, dedup, rules) {
+                Ok(true) => new_count += 1,
+                Ok(false) => {}
+                Err(e) => log::warn!("{label} upsert failed (feed {feed_id}): {e}"),
+            }
+        }
+    }
+    new_count
+}
+
 /// Outcome of fetching one feed.
 enum Outcome {
     NotModified,
@@ -60,15 +86,6 @@ async fn fetch_one(
     }
 }
 
-/// Read an integer setting, falling back to `default`.
-fn int_setting(conn: &rusqlite::Connection, key: &str, default: i64) -> i64 {
-    db::get_setting(conn, key)
-        .ok()
-        .flatten()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(default)
-}
-
 /// Refresh every feed (bounded concurrency). Streams per-feed progress over
 /// `progress` when provided, emits `feeds-updated`, fires a notification,
 /// runs retention cleanup, syncs to FreshRSS, and returns the new-article count.
@@ -102,12 +119,9 @@ pub async fn refresh_all(
     let (feeds, concurrency, dedup, rules) = {
         let conn = state.db.lock().await;
         let feeds = db::feeds_to_refresh(&conn)?;
-        let concurrency = int_setting(&conn, "net_concurrency", 6).clamp(1, 16) as usize;
-        let dedup = db::get_setting(&conn, "dedup_enabled")
-            .ok()
-            .flatten()
-            .map(|v| v == "1")
-            .unwrap_or(false);
+        let concurrency =
+            db::setting_parsed::<i64>(&conn, "net_concurrency", 6).clamp(1, 16) as usize;
+        let dedup = db::setting_flag(&conn, "dedup_enabled", false);
         let rules = db::active_rules(&conn).unwrap_or_default();
         (feeds, concurrency, dedup, rules)
     };
@@ -152,21 +166,15 @@ pub async fn refresh_all(
                 etag,
                 last_modified,
             } => {
-                // Insert in bounded chunks, releasing the shared DB lock
-                // between each so concurrent UI queries aren't starved while
-                // a large feed (hundreds of items) is being ingested.
-                for chunk in parsed.articles.chunks(64) {
-                    let conn = state.db.lock().await;
-                    for article in chunk {
-                        match db::upsert_article(&conn, feed_id, article, dedup, &rules) {
-                            Ok(true) => new_here += 1,
-                            Ok(false) => {}
-                            Err(e) => log::warn!(
-                                "upsert_article failed (feed {feed_id}): {e}"
-                            ),
-                        }
-                    }
-                }
+                new_here += upsert_articles(
+                    &state.db,
+                    feed_id,
+                    &parsed.articles,
+                    dedup,
+                    &rules,
+                    "rss",
+                )
+                .await;
                 let conn = state.db.lock().await;
                 let _ = db::update_feed_meta(
                     &conn,
@@ -220,15 +228,8 @@ pub async fn refresh_all(
         let conn = state.db.lock().await;
         let retention = db::get_setting(&conn, "retention_days").ok().flatten();
         if let Some(days) = retention.and_then(|v| v.parse::<i64>().ok()) {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs() as i64)
-                .unwrap_or(0);
-            let last_run = db::get_setting(&conn, "retention_last_run")
-                .ok()
-                .flatten()
-                .and_then(|v| v.parse::<i64>().ok())
-                .unwrap_or(0);
+            let now = chrono::Utc::now().timestamp();
+            let last_run = db::setting_parsed::<i64>(&conn, "retention_last_run", 0);
             if now - last_run >= 86_400 {
                 match db::cleanup_old_articles(&conn, days) {
                     Ok(removed) => {
@@ -340,20 +341,9 @@ async fn poll_newsletters(
                     .filter_map(|raw| newsletter::email_to_article(raw))
                     .map(|p| p.article)
                     .collect();
-                // Insert in bounded chunks, releasing the shared lock between
-                // each, mirroring the RSS ingest loop in `refresh_all`.
-                for chunk in articles.chunks(64) {
-                    let conn = state.db.lock().await;
-                    for article in chunk {
-                        match db::upsert_article(&conn, feed_id, article, dedup, rules) {
-                            Ok(true) => total_new += 1,
-                            Ok(false) => {}
-                            Err(e) => log::warn!(
-                                "newsletter upsert failed (feed {feed_id}): {e}"
-                            ),
-                        }
-                    }
-                }
+                total_new +=
+                    upsert_articles(&state.db, feed_id, &articles, dedup, rules, "newsletter")
+                        .await;
                 let conn = state.db.lock().await;
                 let _ = db::touch_feed(&conn, feed_id);
             }

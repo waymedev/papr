@@ -79,6 +79,28 @@
     return out;
   }
 
+  /** Reddit listing path segments that have their own `.rss` feed. */
+  const REDDIT_LISTINGS = ["hot", "new", "top", "rising"];
+
+  /**
+   * True if `hostname` is `youtube.com` or one of its subdomains. Anchored on
+   * a dot boundary so a lookalike host (`notyoutube.com`) is rejected.
+   */
+  function isYoutubeHost(hostname) {
+    const h = (hostname || "").toLowerCase();
+    return h === "youtube.com" || h.endsWith(".youtube.com");
+  }
+
+  /** Build the channel-feed result object for a `UC…` channel id. */
+  function youtubeChannelFeed(channelId) {
+    return {
+      title: "YouTube channel",
+      feedUrl:
+        "https://www.youtube.com/feeds/videos.xml?channel_id=" + channelId,
+      kind: "youtube",
+    };
+  }
+
   /** True if `id` looks like a YouTube channel id (`UC` + 22 chars). */
   function isYoutubeChannelId(id) {
     return (
@@ -129,16 +151,10 @@
     const segments = url.pathname.split("/").filter(Boolean);
 
     // ── YouTube ──
-    if (host.endsWith("youtube.com")) {
+    if (isYoutubeHost(host)) {
       if (url.pathname.indexOf("/feeds/videos.xml") !== -1) return null;
       if (segments[0] === "channel" && isYoutubeChannelId(segments[1])) {
-        return {
-          title: "YouTube channel",
-          feedUrl:
-            "https://www.youtube.com/feeds/videos.xml?channel_id=" +
-            segments[1],
-          kind: "youtube",
-        };
+        return youtubeChannelFeed(segments[1]);
       }
       if (segments[0] === "playlist") {
         const list = url.searchParams.get("list");
@@ -158,14 +174,7 @@
           segments[0] === "user");
       if (isVanity && pageHtml) {
         const id = extractYoutubeChannelId(pageHtml);
-        if (id) {
-          return {
-            title: "YouTube channel",
-            feedUrl:
-              "https://www.youtube.com/feeds/videos.xml?channel_id=" + id,
-            kind: "youtube",
-          };
-        }
+        if (id) return youtubeChannelFeed(id);
       }
       return null;
     }
@@ -186,7 +195,7 @@
             kind: "reddit",
           };
         }
-        if (["hot", "new", "top", "rising"].indexOf(listing) !== -1) {
+        if (REDDIT_LISTINGS.indexOf(listing) !== -1) {
           return {
             title: "r/" + sub + "/" + listing,
             feedUrl:
@@ -251,5 +260,6 @@
     detectFeeds: detectFeeds,
     buildSubscribeLink: buildSubscribeLink,
     isYoutubeChannelId: isYoutubeChannelId,
+    isYoutubeHost: isYoutubeHost,
   };
 });

@@ -310,6 +310,10 @@ function HighlightPopover({
   const { t } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
   const [note, setNote] = useState(hl.note);
+  // Latest note, read by the once-bound outside-click handler so the listener
+  // need not re-subscribe on every keystroke.
+  const noteRef = useRef(note);
+  noteRef.current = note;
   const [place, setPlace] = useState({ left: x, top: y });
 
   useLayoutEffect(() => {
@@ -342,12 +346,13 @@ function HighlightPopover({
       window.removeEventListener("keydown", onKey);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [note]);
+  }, []);
 
   const save = async () => {
-    if (note !== hl.note) {
+    const current = noteRef.current;
+    if (current !== hl.note) {
       try {
-        await api.updateHighlightNote(hl.id, note);
+        await api.updateHighlightNote(hl.id, current);
         onChanged();
       } catch (e) {
         onToast(errorText(e));

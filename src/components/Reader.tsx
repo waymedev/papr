@@ -42,6 +42,8 @@ function bodyPlainText(html: string): string {
 /** CJK ideographs + Japanese kana + Korean Hangul — scripts read by the
  *  character, not the whitespace-delimited word. */
 const CJK_CHAR = /[぀-ヿ㐀-鿿가-힯豈-﫿]/u;
+/** Global-flagged variant of `CJK_CHAR` for stripping every CJK glyph. */
+const CJK_CHAR_GLOBAL = new RegExp(CJK_CHAR.source, "gu");
 
 /** Estimate reading time in minutes for an article body's plain text.
  *
@@ -59,7 +61,7 @@ function estimateReadMinutes(text: string): number {
   // Words, with CJK characters stripped so they are not also counted as
   // single-character "words" by the latin path.
   const latinWords = text
-    .replace(/[぀-ヿ㐀-鿿가-힯豈-﫿]/gu, " ")
+    .replace(CJK_CHAR_GLOBAL, " ")
     .trim()
     .split(/\s+/)
     .filter(Boolean).length;
@@ -193,15 +195,19 @@ export default function Reader({ onToast }: Props) {
   useEffect(() => {
     const el = bodyRef.current;
     if (!el) return;
+    const hide = (e: Event) => {
+      (e.currentTarget as HTMLElement).style.display = "none";
+    };
+    const watched: HTMLImageElement[] = [];
     el.querySelectorAll("img").forEach((img) => {
       if (img.complete && img.naturalWidth === 0) {
         img.style.display = "none";
       } else {
-        img.addEventListener("error", () => {
-          img.style.display = "none";
-        });
+        img.addEventListener("error", hide);
+        watched.push(img);
       }
     });
+    return () => watched.forEach((img) => img.removeEventListener("error", hide));
   }, [a?.id, showExtracted, a?.extractedHtml]);
 
   // Mark as read once when an unread article is opened (if the user opted in).

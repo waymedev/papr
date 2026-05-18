@@ -61,7 +61,7 @@ const ls = {
     if (v == null) return fallback;
     const n = Number(v);
     if (!Number.isFinite(n)) return fallback;
-    return Math.min(max, Math.max(min, n));
+    return clamp(n, min, max);
   },
   bool: (k: string, fallback: boolean) => {
     const v = localStorage.getItem(k);

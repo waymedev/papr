@@ -27,15 +27,20 @@
     return out;
   }
 
-  /** Run detection against the current document. */
+  // Memoized last detection — `detect()` is called by both `report()` and the
+  // popup's `get-feeds` request; the MutationObserver clears it when the
+  // <head> changes so a stale result is never served.
+  let cached = null;
+
+  /** Run detection against the current document (memoized). */
   function detect() {
+    if (cached) return cached;
     // `pageHtml` is consulted by exactly one code path — resolving a YouTube
     // vanity URL (`@handle`, `/c/`, `/user/`) to a channel id. Serializing the
     // whole document (`outerHTML` — often megabytes) on every other site is
-    // pure waste, and `detect()` runs again on every `<head>` mutation, so the
-    // waste repeats. Only pay that cost when the page can actually use it.
-    const isYoutube = /(^|\.)youtube\.com$/.test(location.hostname);
-    return PaprDetect.detectFeeds({
+    // pure waste, so only pay that cost when the page can actually use it.
+    const isYoutube = PaprDetect.isYoutubeHost(location.hostname);
+    cached = PaprDetect.detectFeeds({
       pageUrl: location.href,
       links: readLinks(),
       pageHtml:
@@ -43,6 +48,7 @@
           ? document.documentElement.outerHTML
           : "",
     });
+    return cached;
   }
 
   /** Tell the background worker how many feeds this page has. */
@@ -57,12 +63,12 @@
     }
   }
 
-  // The popup asks the active tab for its feeds on open.
+  // The popup asks the active tab for its feeds on open. The response is
+  // synchronous, so the listener does not return `true`.
   chrome.runtime.onMessage.addListener(function (msg, _sender, sendResponse) {
     if (msg && msg.type === "get-feeds") {
       sendResponse({ feeds: detect(), pageUrl: location.href });
     }
-    return true;
   });
 
   // Report once now, and again if the page mutates its <head> (SPAs).
@@ -74,9 +80,16 @@
     // the main thread; coalesce a burst into a single trailing report.
     let timer = 0;
     const observer = new MutationObserver(function () {
+      cached = null;
       clearTimeout(timer);
       timer = setTimeout(report, 300);
     });
     observer.observe(document.head, { childList: true, subtree: true });
+    // Stop observing when the page is torn down — an SPA that mutates its
+    // <head> forever would otherwise keep the observer (and `detect()`) alive.
+    window.addEventListener("pagehide", function () {
+      observer.disconnect();
+      clearTimeout(timer);
+    });
   }
 })();
