@@ -6,7 +6,7 @@ export type IconName =
   | "inbox" | "circle" | "unread" | "star" | "star-fill" | "bookmark"
   | "bookmark-fill" | "clock" | "tag" | "folder" | "rss" | "search"
   | "plus" | "check" | "check-all" | "sort" | "sparkle" | "sparkle-fill"
-  | "open" | "share" | "more" | "refresh" | "settings" | "chevron-down"
+  | "open" | "share" | "send" | "more" | "refresh" | "settings" | "chevron-down"
   | "chevron-right" | "globe" | "focus" | "arrow-down" | "arrow-up"
   | "eye" | "eye-off" | "trash" | "mute" | "pin" | "x" | "command"
   | "copy" | "list" | "grid" | "text" | "alert" | "papr"
@@ -89,6 +89,8 @@ export default function Icon({
       return <svg {...p}><path d="M14 4h6v6M20 4l-8 8M19 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5" /></svg>;
     case "share":
       return <svg {...p}><path d="M12 4v12M12 4l-4 4M12 4l4 4M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4" /></svg>;
+    case "send":
+      return <svg {...p}><path d="M21 3L10 14M21 3l-7 18-4-8-8-4z" /></svg>;
     case "more":
       return <svg {...p}><circle cx="5" cy="12" r="1.2" fill={color} stroke="none" /><circle cx="12" cy="12" r="1.2" fill={color} stroke="none" /><circle cx="19" cy="12" r="1.2" fill={color} stroke="none" /></svg>;
     case "refresh":

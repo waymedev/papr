@@ -94,14 +94,32 @@ export default function HighlightLayer({
 
   // Re-apply highlights to the body whenever the highlight set or the body
   // HTML changes. `bodyVersion` flips when the Reader swaps the body markup.
+  //
+  // The <mark> overlay is injected into DOM that React owns via
+  // `dangerouslySetInnerHTML`, so anything that re-populates the body —
+  // React resetting its innerHTML, or the body element only filling in
+  // *after* this effect first runs (the reopen race that left highlights
+  // blank until the next edit) — silently drops every mark. A
+  // MutationObserver re-applies them whenever the body's child list changes;
+  // `bodyVersion` alone misses a body rebuilt with identical markup and the
+  // initial mount ordering.
   useEffect(() => {
     const el = bodyRef.current;
     if (!el) return;
-    if (highlights.length === 0) {
-      clearHighlights(el);
-      return;
-    }
-    applyHighlights(el, highlights);
+
+    let obs: MutationObserver | null = null;
+    const apply = () => {
+      // Suspend observation while we mutate so our own <mark> edits do not
+      // re-trigger the callback (which would loop).
+      obs?.disconnect();
+      if (highlights.length === 0) clearHighlights(el);
+      else applyHighlights(el, highlights);
+      obs?.observe(el, { childList: true, subtree: true });
+    };
+
+    obs = new MutationObserver(apply);
+    apply();
+    return () => obs?.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [highlights, bodyVersion]);
 

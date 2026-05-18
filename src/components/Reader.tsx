@@ -443,7 +443,7 @@ export default function Reader({ onToast }: Props) {
             setSendTo((p) => (p ? null : { x: r.left, y: r.bottom + 6 }));
           }}
         >
-          <Icon name="open" size={16} />
+          <Icon name="send" size={16} />
         </button>
         <HighlightLayer
           // Keyed by article id so the export menu / popovers reset cleanly
