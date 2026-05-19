@@ -26,6 +26,24 @@
   --accent-soft: oklch(0.94 0.04 50);
   --accent-ink: oklch(0.42 0.10 38);
 
+  /* status — one red, one green, one amber; flipped per theme below */
+  --danger: oklch(0.52 0.17 28);
+  --danger-soft: oklch(0.95 0.03 28);
+  --danger-line: oklch(0.87 0.06 28);
+  --success: oklch(0.45 0.10 150);
+  --success-soft: oklch(0.93 0.045 150);
+  --warn: oklch(0.62 0.18 35);
+  /* a filled-danger button colour that holds white text in either theme */
+  --danger-solid: oklch(0.53 0.18 28);
+  /* the toast pill inverts per theme, so its alert icon must invert too */
+  --toast-alert: oklch(0.72 0.16 30);
+
+  /* warm-tinted elevation — a paper UI casts warm shadows, never neutral black */
+  --shadow-raise: 0 1px 2px oklch(0.15 0.03 50 / 0.18);
+  --shadow-pop: 0 14px 38px oklch(0.15 0.03 50 / 0.17);
+  --shadow-modal: 0 26px 64px oklch(0.15 0.03 50 / 0.26);
+  --shadow-ring: 0 0 0 1px oklch(0.15 0.03 50 / 0.05);
+
   /* density */
   --row-py: 14px;
   --list-px: 18px;
@@ -60,6 +78,19 @@
   --accent: oklch(0.74 0.13 45);
   --accent-soft: oklch(0.32 0.06 40);
   --accent-ink: oklch(0.80 0.10 45);
+
+  --danger: oklch(0.68 0.16 28);
+  --danger-soft: oklch(0.30 0.07 28);
+  --danger-line: oklch(0.42 0.09 28);
+  --success: oklch(0.72 0.12 150);
+  --success-soft: oklch(0.30 0.06 150);
+  --warn: oklch(0.70 0.16 40);
+  --toast-alert: oklch(0.50 0.17 28);
+
+  --shadow-raise: 0 1px 2px oklch(0 0 0 / 0.45);
+  --shadow-pop: 0 14px 38px oklch(0 0 0 / 0.55);
+  --shadow-modal: 0 26px 64px oklch(0 0 0 / 0.62);
+  --shadow-ring: 0 0 0 1px oklch(0 0 0 / 0.3);
 }
 
 [data-density="compact"] { --row-py: 10px; --list-px: 14px; }
@@ -226,17 +257,9 @@ button { font-family: inherit; }
 }
 .sb-item:hover { background: var(--hover); }
 .sb-item.active {
-  background: var(--selected);
-  color: var(--ink);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
   font-weight: 550;
-}
-.sb-item.active::before {
-  content: '';
-  position: absolute;
-  left: 2px; top: 6px; bottom: 6px;
-  width: 2px;
-  border-radius: 2px;
-  background: var(--accent);
 }
 .sb-item .sb-ico {
   width: 16px; height: 16px;
@@ -258,7 +281,7 @@ button { font-family: inherit; }
   font-variant-numeric: tabular-nums;
   font-weight: 500;
 }
-.sb-item.active .sb-count { color: var(--ink-2); }
+.sb-item.active .sb-count { color: var(--accent-ink); }
 
 .sb-folder {
   display: flex;
@@ -415,13 +438,6 @@ button { font-family: inherit; }
 }
 .art:hover { background: var(--hover); }
 .art.active { background: var(--accent-soft); }
-.art.active::before {
-  content: '';
-  position: absolute;
-  left: 0; top: 0; bottom: 0;
-  width: 3px;
-  background: var(--accent);
-}
 .art.read .art-title { color: var(--muted); font-weight: 500; }
 .art.read .art-feed { opacity: 0.7; }
 .art.read .art-snippet { color: var(--muted-2); }
@@ -496,7 +512,7 @@ button { font-family: inherit; }
   aspect-ratio: 16 / 9;
   border-radius: 8px;
   margin-bottom: 12px;
-  background: linear-gradient(135deg, var(--accent-soft), var(--paper));
+  background: var(--accent-soft);
   border: 1px solid var(--hair);
   position: relative;
   overflow: hidden;
@@ -589,7 +605,9 @@ button { font-family: inherit; }
 
 .article-body {
   font-family: var(--reader-font);
-  font-size: var(--reader-size, 17px);
+  /* The body shrinks by --reader-font-adjust so sans / Hyperlegible match the
+     serif's optical size at the same slider value (see READER_FONTS). */
+  font-size: calc(var(--reader-size, 17px) + var(--reader-font-adjust, 0px));
   line-height: var(--reader-leading, 1.65);
   color: var(--ink);
   letter-spacing: 0.003em;
@@ -597,7 +615,6 @@ button { font-family: inherit; }
      letting them overflow the reading column. */
   overflow-wrap: break-word;
 }
-.article-body[data-serif="false"] { font-family: var(--ui); font-size: calc(var(--reader-size, 17px) - 1.5px); line-height: var(--reader-leading, 1.6); }
 .article { max-width: var(--reader-width, 680px); }
 .article-body p { margin: 0 0 1.05em; }
 .article-body h2 {
@@ -804,7 +821,7 @@ button { font-family: inherit; }
   background: var(--panel-2);
   border: 1px solid var(--hair-strong);
   border-radius: 14px;
-  box-shadow: 0 24px 60px rgba(0,0,0,0.25), 0 0 0 1px rgba(0,0,0,0.04);
+  box-shadow: var(--shadow-modal), var(--shadow-ring);
   overflow: hidden;
   animation: cp-pop .2s cubic-bezier(.22,.61,.36,1);
 }
@@ -878,7 +895,7 @@ button { font-family: inherit; }
   color: var(--muted);
   font-size: 12px;
 }
-.cp-notice svg { color: oklch(0.55 0.16 28); flex-shrink: 0; }
+.cp-notice svg { color: var(--danger); flex-shrink: 0; }
 
 .cp-footer {
   display: flex;
@@ -908,7 +925,7 @@ button { font-family: inherit; }
   background: var(--panel-2);
   border: 1px solid var(--hair-strong);
   border-radius: 10px;
-  box-shadow: 0 14px 40px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.03);
+  box-shadow: var(--shadow-pop), var(--shadow-ring);
   padding: 5px;
   animation: cp-pop .12s ease;
   font-size: 13px;
@@ -960,7 +977,7 @@ button { font-family: inherit; }
   background: var(--panel-2);
   border: 1px solid var(--hair-strong);
   border-radius: 12px;
-  box-shadow: 0 16px 40px rgba(0,0,0,0.18);
+  box-shadow: var(--shadow-pop);
   padding: 16px 18px;
   pointer-events: none;
   animation: cp-pop .15s ease;
@@ -991,7 +1008,9 @@ button { font-family: inherit; }
   padding-left: 80px;
 }
 
-/* Toast */
+/* Toast — a single transient pill. The dwell time is JS-driven (it varies by
+   kind: a confirmation is brief, an error lingers, an undo holds a window),
+   so there is no CSS exit animation that would fight a non-default duration. */
 .toast {
   position: fixed;
   bottom: 24px;
@@ -999,25 +1018,77 @@ button { font-family: inherit; }
   transform: translateX(-50%);
   background: var(--ink);
   color: var(--paper);
-  padding: 10px 16px;
+  padding: 9px 10px 9px 16px;
   border-radius: 999px;
   font-size: 12.5px;
   font-weight: 500;
   z-index: 300;
-  animation: toast-in .25s ease, toast-out .25s ease 1.6s forwards;
+  animation: toast-in .26s cubic-bezier(.22,.61,.36,1);
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  box-shadow: var(--shadow-pop);
+  max-width: min(460px, calc(100vw - 32px));
+}
+.toast .toast-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .toast kbd {
   font-family: var(--mono);
   font-size: 10.5px;
-  background: rgba(255,255,255,0.12);
+  /* tint with --paper, not white: the pill inverts in the dark theme */
+  background: color-mix(in oklch, var(--paper) 14%, transparent);
   padding: 1px 5px;
   border-radius: 3px;
+  flex-shrink: 0;
 }
-@keyframes toast-in { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
-@keyframes toast-out { to { opacity: 0; transform: translate(-50%, 4px); } }
+.toast .toast-ico {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--toast-alert);
+}
+/* Undo — a quiet pill within the pill, the toast's one tappable affordance */
+.toast-action {
+  flex-shrink: 0;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--paper);
+  background: color-mix(in oklch, var(--paper) 15%, transparent);
+  border: 0;
+  border-radius: 999px;
+  padding: 4px 13px;
+  cursor: pointer;
+  transition: background .12s;
+}
+.toast-action:hover {
+  background: color-mix(in oklch, var(--paper) 27%, transparent);
+}
+.toast-dismiss {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 0;
+  border-radius: 50%;
+  color: color-mix(in oklch, var(--paper) 58%, transparent);
+  cursor: pointer;
+  transition: background .12s, color .12s;
+}
+.toast-dismiss:hover {
+  background: color-mix(in oklch, var(--paper) 14%, transparent);
+  color: var(--paper);
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translate(-50%, 10px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
 
 /* Article transition — kept subtle; no opacity-zero starting frame
    to avoid screenshot-tool / reduced-motion edge cases */
@@ -1051,7 +1122,7 @@ button { font-family: inherit; }
   max-height: 90vh;
   background: var(--panel-2);
   border-radius: 14px;
-  box-shadow: 0 24px 80px rgba(0,0,0,0.32), 0 0 0 1px rgba(0,0,0,0.05);
+  box-shadow: var(--shadow-modal), var(--shadow-ring);
   display: grid;
   grid-template-columns: 220px 1fr;
   overflow: hidden;
@@ -1231,7 +1302,7 @@ button { font-family: inherit; }
   width: 16px; height: 16px;
   background: var(--panel-2);
   border-radius: 50%;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.18);
+  box-shadow: var(--shadow-raise);
   transition: transform .18s cubic-bezier(.22,.61,.36,1);
 }
 .s-toggle:checked { background: var(--accent); }
@@ -1270,12 +1341,12 @@ button { font-family: inherit; }
   background: var(--accent);
   border-radius: 50%;
   cursor: pointer;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  box-shadow: var(--shadow-raise);
 }
 /* `outline: 0` above drops the UA focus ring — restore a visible one on the
    thumb for keyboard users. */
 .s-slider:focus-visible::-webkit-slider-thumb {
-  box-shadow: 0 1px 2px rgba(0,0,0,0.2), 0 0 0 3px var(--accent-soft);
+  box-shadow: var(--shadow-raise), 0 0 0 3px var(--accent-soft);
 }
 .s-value {
   font-family: var(--mono);
@@ -1309,7 +1380,7 @@ button { font-family: inherit; }
 .s-seg button.on {
   background: var(--panel-2);
   color: var(--ink);
-  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+  box-shadow: 0 1px 2px oklch(0.15 0.03 50 / 0.09);
 }
 
 /* Color swatches */
@@ -1363,8 +1434,15 @@ button { font-family: inherit; }
   color: #fff;
 }
 .s-btn.primary:hover { filter: brightness(0.95); }
-.s-btn.danger { color: oklch(0.50 0.16 28); border-color: oklch(0.88 0.05 28); }
-.s-btn.danger:hover { background: oklch(0.96 0.03 28); }
+.s-btn.danger { color: var(--danger); border-color: var(--danger-line); }
+.s-btn.danger:hover { background: var(--danger-soft); }
+/* a filled, destructive primary — the confirm button in ConfirmDialog */
+.s-btn.primary.danger {
+  background: var(--danger-solid);
+  border-color: var(--danger-solid);
+  color: #fff;
+}
+.s-btn.primary.danger:hover { background: var(--danger-solid); filter: brightness(0.94); }
 
 /* Feed list (in subscriptions section) */
 .s-feed-row {
@@ -1421,8 +1499,8 @@ button { font-family: inherit; }
   margin-right: 8px;
 }
 .s-service .status.on {
-  background: oklch(0.94 0.05 145);
-  color: oklch(0.40 0.10 145);
+  background: var(--success-soft);
+  color: var(--success);
 }
 
 /* Shortcut table */
@@ -1516,7 +1594,7 @@ button { font-family: inherit; }
 
 /* feed fetch-error marker */
 .sb-warn {
-  color: oklch(0.62 0.18 30);
+  color: var(--warn);
   font-weight: 700;
   font-size: 12px;
   flex-shrink: 0;
@@ -1591,7 +1669,7 @@ button { font-family: inherit; }
   background: var(--panel-2);
   border: 1px solid var(--hair-strong);
   border-radius: 14px;
-  box-shadow: 0 24px 70px rgba(0,0,0,0.3);
+  box-shadow: var(--shadow-modal);
   padding: 22px 24px 18px;
   animation: cp-pop .2s cubic-bezier(.22,.61,.36,1);
 }
@@ -1609,7 +1687,7 @@ button { font-family: inherit; }
 }
 .modal-input:focus { border-color: var(--accent); }
 .modal-error {
-  font-size: 12px; color: oklch(0.55 0.17 28);
+  font-size: 12px; color: var(--danger);
   margin: 2px 0 8px;
 }
 .modal-actions {
@@ -1630,7 +1708,7 @@ button { font-family: inherit; }
 }
 .seg-btn.active {
   color: var(--ink); background: var(--bg, var(--panel));
-  box-shadow: 0 1px 2px oklch(0 0 0 / 0.08);
+  box-shadow: 0 1px 2px oklch(0.15 0.03 50 / 0.09);
 }
 
 /* Feed discovery results in the Add-feed dialog (feature F6). */
@@ -1806,7 +1884,7 @@ button { font-family: inherit; }
 }
 .explore-card:hover {
   border-color: var(--accent);
-  box-shadow: 0 3px 14px oklch(0 0 0 / 0.08);
+  box-shadow: 0 3px 14px oklch(0.15 0.03 50 / 0.11);
 }
 .explore-card-head {
   display: flex;
@@ -2036,7 +2114,7 @@ button { font-family: inherit; }
   background: var(--paper);
   border: 1px solid var(--hair-strong);
   border-radius: 10px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow-pop);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2216,7 +2294,7 @@ button { font-family: inherit; }
 }
 .rule-preview-samples li {
   font-size: 11.5px;
-  color: var(--ink-2);
+  color: var(--accent-ink);
   line-height: 1.6;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2247,7 +2325,7 @@ button { font-family: inherit; }
   background: var(--panel-2);
   border: 1px solid var(--hair-strong);
   border-radius: 9px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+  box-shadow: var(--shadow-pop);
   animation: cp-pop 0.12s ease;
 }
 
@@ -2274,19 +2352,18 @@ button { font-family: inherit; }
   background: var(--panel-2);
   border: 1px solid var(--hair-strong);
   border-radius: 11px;
-  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--shadow-pop);
   padding: 12px;
   animation: cp-pop 0.12s ease;
 }
 .hl-quote {
   margin: 0 0 10px;
-  padding: 6px 10px;
-  border-left: 3px solid var(--accent);
-  background: var(--panel);
-  border-radius: 0 6px 6px 0;
+  padding: 8px 11px;
+  background: var(--accent-soft);
+  border-radius: 8px;
   font-size: 12.5px;
   line-height: 1.5;
-  color: var(--ink-2);
+  color: var(--accent-ink);
   max-height: 96px;
   overflow-y: auto;
 }

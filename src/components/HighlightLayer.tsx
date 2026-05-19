@@ -13,7 +13,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import * as api from "../api";
 import { useMenuKeyboard } from "../hooks/useMenuKeyboard";
-import { errorText } from "../lib/errors";
+import { reportError, withUndo } from "../toast";
 import {
   applyHighlights,
   clearHighlights,
@@ -186,8 +186,25 @@ export default function HighlightLayer({
       pendingRef.current = null;
       reload();
     } catch (e) {
-      onToast(errorText(e));
+      reportError(e);
     }
+  };
+
+  // Deleting a highlight runs behind an Undo window: it leaves the overlay at
+  // once, but is only removed from the database ~6s later unless the user
+  // takes it back. A snapshot is kept so Undo can restore it in reading order.
+  const deleteHighlight = (hl: Highlight) => {
+    withUndo({
+      text: t("highlights.deleted"),
+      apply: () => setHighlights((prev) => prev.filter((h) => h.id !== hl.id)),
+      commit: () => {
+        api.deleteHighlight(hl.id).catch(reportError);
+      },
+      revert: () =>
+        setHighlights((prev) =>
+          [...prev, hl].sort((a, b) => a.textOffset - b.textOffset),
+        ),
+    });
   };
 
   return (
@@ -207,7 +224,7 @@ export default function HighlightLayer({
           y={editing.y}
           onClose={() => setEditing(null)}
           onChanged={reload}
-          onToast={onToast}
+          onDelete={deleteHighlight}
         />
       )}
       <div className="hl-export-wrap">
@@ -298,14 +315,14 @@ function HighlightPopover({
   y,
   onClose,
   onChanged,
-  onToast,
+  onDelete,
 }: {
   hl: Highlight;
   x: number;
   y: number;
   onClose: () => void;
   onChanged: () => void;
-  onToast: (m: string) => void;
+  onDelete: (hl: Highlight) => void;
 }) {
   const { t } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
@@ -355,7 +372,7 @@ function HighlightPopover({
         await api.updateHighlightNote(hl.id, current);
         onChanged();
       } catch (e) {
-        onToast(errorText(e));
+        reportError(e);
       }
     }
     onClose();
@@ -366,18 +383,15 @@ function HighlightPopover({
       await api.setHighlightColor(hl.id, color);
       onChanged();
     } catch (e) {
-      onToast(errorText(e));
+      reportError(e);
     }
   };
 
-  const remove = async () => {
-    try {
-      await api.deleteHighlight(hl.id);
-      onChanged();
-      onClose();
-    } catch (e) {
-      onToast(errorText(e));
-    }
+  // The delete itself — including its Undo window — is owned by the parent;
+  // here we just hand off the highlight and dismiss the popover.
+  const remove = () => {
+    onDelete(hl);
+    onClose();
   };
 
   return (
@@ -464,7 +478,7 @@ function ExportMenu({
     try {
       await fn();
     } catch (e) {
-      onToast(errorText(e));
+      reportError(e);
     } finally {
       setBusy(false);
       onClose();

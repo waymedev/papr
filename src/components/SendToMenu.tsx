@@ -11,7 +11,7 @@ import { useTranslation } from "react-i18next";
 import * as api from "../api";
 import { useDismiss } from "../hooks/useDismiss";
 import { useMenuKeyboard } from "../hooks/useMenuKeyboard";
-import { errorText } from "../lib/errors";
+import { reportError } from "../toast";
 import { clampToViewport } from "../lib/viewport";
 import type { ShareTarget, ShareTargets } from "../types";
 import Icon, { type IconName } from "./Icon";
@@ -71,7 +71,7 @@ export default function SendToMenu({ articleId, x, y, onClose, onToast }: Props)
       onToast(t("sendTo.sent", { target: t(`sendTo.${target}`) }));
       onClose();
     } catch (e) {
-      onToast(errorText(e));
+      reportError(e);
     } finally {
       setBusy(null);
     }

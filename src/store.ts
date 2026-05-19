@@ -12,6 +12,17 @@ export type Accent = "clay" | "pine" | "indigo" | "ink";
 export type Density = "compact" | "cozy" | "spacious";
 export type ViewMode = "list" | "card";
 export type StartupView = "all" | "unread" | "starred" | "last";
+export type ReaderFont = "serif" | "sans" | "hyperlegible";
+
+/** Reader title/body typeface options. `stack` feeds the `--reader-font` CSS
+ *  variable; `adjust` nudges the body font-size — sans and Hyperlegible read
+ *  visually larger than the serif at the same pixel size, so they shrink a
+ *  touch to keep the optical size even across choices. */
+export const READER_FONTS: Record<ReaderFont, { stack: string; adjust: string }> = {
+  serif: { stack: "var(--serif)", adjust: "0px" },
+  sans: { stack: "var(--ui)", adjust: "-1.5px" },
+  hyperlegible: { stack: "'Atkinson Hyperlegible', var(--ui)", adjust: "-1.5px" },
+};
 
 /** Valid ranges for the reader appearance sliders — the single source of
  *  truth shared by the Settings sliders, persistence validation, and the
@@ -88,7 +99,7 @@ interface UiState {
   accent: Accent;
   density: Density;
   viewMode: ViewMode;
-  useSerif: boolean;
+  readerFont: ReaderFont;
   readerSize: number;
   readerLeading: number;
   readerWidth: number;
@@ -109,7 +120,7 @@ interface UiState {
   setAccent: (a: Accent) => void;
   setDensity: (d: Density) => void;
   setViewMode: (v: ViewMode) => void;
-  setUseSerif: (v: boolean) => void;
+  setReaderFont: (v: ReaderFont) => void;
   setReader: (p: Partial<Pick<UiState, "readerSize" | "readerLeading" | "readerWidth">>) => void;
 
   setPref: (patch: Partial<Prefs>) => void;
@@ -138,6 +149,14 @@ const PREF_KEYS: (keyof Prefs)[] = [
  *  way `i18n.ts` persists the language for backend-localised text. */
 function mirrorTheme(theme: Theme): void {
   api.setSetting("theme", theme).catch(() => {});
+}
+
+/** Resolve the persisted reader font, migrating the pre-0.2 boolean
+ *  `useSerif` toggle (serif on/off) to the named-typeface preference. */
+function loadReaderFont(): ReaderFont {
+  const v = localStorage.getItem("readerFont");
+  if (v === "serif" || v === "sans" || v === "hyperlegible") return v;
+  return localStorage.getItem("useSerif") === "0" ? "sans" : "serif";
 }
 
 function loadPrefs(): Prefs {
@@ -173,7 +192,7 @@ export const useUi = create<UiState>((set) => ({
     "cozy",
   ),
   viewMode: ls.oneOf<ViewMode>("viewMode", ["list", "card"], "list"),
-  useSerif: ls.bool("useSerif", true),
+  readerFont: loadReaderFont(),
   readerSize: ls.num("readerSize", 17, READER_BOUNDS.size.min, READER_BOUNDS.size.max),
   readerLeading: ls.num(
     "readerLeading",
@@ -202,7 +221,7 @@ export const useUi = create<UiState>((set) => ({
   setAccent: (accent) => { ls.set("accent", accent); set({ accent }); },
   setDensity: (density) => { ls.set("density", density); set({ density }); },
   setViewMode: (viewMode) => { ls.set("viewMode", viewMode); set({ viewMode }); },
-  setUseSerif: (useSerif) => { ls.set("useSerif", useSerif); set({ useSerif }); },
+  setReaderFont: (readerFont) => { ls.set("readerFont", readerFont); set({ readerFont }); },
   setReader: (p) => {
     // Clamp on write too: any caller (or a stale slider range) is kept from
     // pushing an out-of-range value into the persisted store or a CSS var.

@@ -9,10 +9,11 @@ import { useArticleActions } from "../hooks/articleActions";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { LANGUAGES, setLanguage, type Language } from "../i18n";
 import { feedHost } from "../lib/feedMeta";
-import { errorText } from "../lib/errors";
+import { reportError } from "../toast";
 import { downloadFile } from "../lib/download";
 import type { Feed, Rule, RuleAction, RuleField, RulePreview } from "../types";
 import Icon, { type IconName } from "./Icon";
+import ConfirmDialog from "./ConfirmDialog";
 import FeedAvatar from "./FeedAvatar";
 
 interface Props {
@@ -145,7 +146,7 @@ export default function SettingsDialog({
           </button>
 
           <div className="settings-scroll">
-            {section === "general" && <GeneralSection onToast={onToast} />}
+            {section === "general" && <GeneralSection />}
             {section === "appearance" && <AppearanceSection />}
             {section === "reading" && <ReadingSection />}
             {section === "subscriptions" && (
@@ -391,7 +392,7 @@ function formatBytes(n: number): string {
 }
 
 /** Open-at-login toggle, backed by the OS via the autostart plugin. */
-function LaunchAtLogin({ onToast }: { onToast: (m: string) => void }) {
+function LaunchAtLogin() {
   const { t } = useTranslation();
   const [on, setOn] = useState(false);
   useEffect(() => {
@@ -403,7 +404,7 @@ function LaunchAtLogin({ onToast }: { onToast: (m: string) => void }) {
       else await disable();
       setOn(v);
     } catch (e) {
-      onToast(errorText(e));
+      reportError(e);
     }
   };
   return (
@@ -436,7 +437,7 @@ function clampSetting(raw: string | null, fallback: number, min: number, max: nu
   return Math.min(max, Math.max(min, n));
 }
 
-function GeneralSection({ onToast }: { onToast: (m: string) => void }) {
+function GeneralSection() {
   const { t } = useTranslation();
   const prefs = useUi((s) => s.prefs);
   const setPref = useUi((s) => s.setPref);
@@ -520,7 +521,7 @@ function GeneralSection({ onToast }: { onToast: (m: string) => void }) {
       </div>
       <div className="settings-group">
         <h3 className="settings-group-title">{t("settings.general.startup")}</h3>
-        <LaunchAtLogin onToast={onToast} />
+        <LaunchAtLogin />
         <Row
           label={t("settings.general.startupView")}
           desc={t("settings.general.startupViewDesc")}
@@ -678,8 +679,8 @@ function AppearanceSection() {
 /* ── reading ─────────────────────────────────────────────── */
 function ReadingSection() {
   const { t } = useTranslation();
-  const useSerif = useUi((s) => s.useSerif);
-  const setUseSerif = useUi((s) => s.setUseSerif);
+  const readerFont = useUi((s) => s.readerFont);
+  const setReaderFont = useUi((s) => s.setReaderFont);
   const readerSize = useUi((s) => s.readerSize);
   const readerLeading = useUi((s) => s.readerLeading);
   const readerWidth = useUi((s) => s.readerWidth);
@@ -690,14 +691,18 @@ function ReadingSection() {
     <>
       <div className="settings-group">
         <h3 className="settings-group-title">{t("settings.reading.font")}</h3>
-        <Row label={t("settings.reading.bodyFont")}>
+        <Row
+          label={t("settings.reading.bodyFont")}
+          desc={t("settings.reading.bodyFontDesc")}
+        >
           <Segmented
-            value={useSerif ? "serif" : "sans"}
+            value={readerFont}
             options={[
               { value: "serif", label: t("settings.reading.serif") },
               { value: "sans", label: t("settings.reading.sans") },
+              { value: "hyperlegible", label: t("settings.reading.hyperlegible") },
             ]}
-            onChange={(v) => setUseSerif(v === "serif")}
+            onChange={setReaderFont}
           />
         </Row>
         <Row label={t("settings.reading.fontSize")}>
@@ -783,7 +788,7 @@ function SubscriptionsSection({
       downloadFile(xml, "subscriptions.opml", "text/xml");
       onToast(t("settings.subscriptions.opmlExported"));
     } catch (e) {
-      onToast(errorText(e));
+      reportError(e);
     }
   };
 
@@ -793,7 +798,7 @@ function SubscriptionsSection({
       await qc.invalidateQueries();
       onToast(t("settings.subscriptions.opmlImported", { count: n }));
     } catch (e) {
-      onToast(errorText(e));
+      reportError(e);
     }
   };
 
@@ -806,7 +811,7 @@ function SubscriptionsSection({
         actions.refreshAfterBulk();
         onToast(t("settings.subscriptions.unsubscribed", { title: f.title }));
       })
-      .catch((e) => onToast(errorText(e)));
+      .catch((e) => reportError(e));
 
   return (
     <>
@@ -925,7 +930,7 @@ function SyncSection({ onToast }: { onToast: (m: string) => void }) {
       onToast(t("settings.sync.connected"));
       setPass("");
     } catch (e) {
-      onToast(errorText(e));
+      reportError(e);
     } finally {
       setBusy(false);
     }
@@ -938,7 +943,7 @@ function SyncSection({ onToast }: { onToast: (m: string) => void }) {
       await qc.invalidateQueries({ queryKey: ["freshrss-status"] });
       onToast(t("settings.sync.disconnected"));
     } catch (e) {
-      onToast(errorText(e));
+      reportError(e);
     } finally {
       setBusy(false);
     }
@@ -953,7 +958,7 @@ function SyncSection({ onToast }: { onToast: (m: string) => void }) {
       actions.refreshAfterBulk();
       onToast(t("settings.sync.syncDone", { count: n }));
     } catch (e) {
-      onToast(errorText(e));
+      reportError(e);
     } finally {
       setBusy(false);
     }
@@ -1103,7 +1108,7 @@ function IntegrationField({
       window.setTimeout(() => setSaved(false), 1500);
       onToast(t("settings.integrations.saved"));
     } catch (e) {
-      onToast(errorText(e));
+      reportError(e);
     }
   };
 
@@ -1454,7 +1459,7 @@ function StorageGroup({ onToast }: { onToast: (m: string) => void }) {
           : t("settings.advanced.cleanupNone"),
       );
     } catch (e) {
-      onToast(errorText(e));
+      reportError(e);
     } finally {
       setBusy(false);
     }
@@ -1466,7 +1471,7 @@ function StorageGroup({ onToast }: { onToast: (m: string) => void }) {
       await qc.invalidateQueries({ queryKey: ["storage-stats"] });
       onToast(t("settings.advanced.vacuumDone"));
     } catch (e) {
-      onToast(errorText(e));
+      reportError(e);
     } finally {
       setBusy(false);
     }
@@ -1561,7 +1566,7 @@ function NetworkGroup({ onToast }: { onToast: (m: string) => void }) {
       .setSetting("net_proxy", value)
       .then(() => api.applyNetworkSettings())
       .then(() => onToast(t("settings.advanced.proxyApplied")))
-      .catch((e) => onToast(errorText(e)));
+      .catch((e) => reportError(e));
   };
 
   return (
@@ -1629,19 +1634,21 @@ function NetworkGroup({ onToast }: { onToast: (m: string) => void }) {
   );
 }
 
-/** Danger zone — reset settings, wipe all local data. */
+/** Danger zone — reset settings, wipe all local data. Each action is gated by
+ *  a themed ConfirmDialog rather than the native, unstyled window.confirm. */
 function DangerZone({ onToast }: { onToast: (m: string) => void }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
-  const resetAll = async () => {
-    if (!window.confirm(t("settings.advanced.resetConfirm"))) return;
+  const [confirming, setConfirming] = useState<null | "reset" | "clear">(null);
+
+  const doReset = async () => {
     try {
       await api.resetSettings();
       for (const k of Object.keys(localStorage)) {
         if (
           k.startsWith("pref.") ||
           [
-            "theme", "accent", "density", "viewMode", "useSerif",
+            "theme", "accent", "density", "viewMode", "readerFont", "useSerif",
             "readerSize", "readerLeading", "readerWidth", "collapsedFolders",
           ].includes(k)
         ) {
@@ -1651,19 +1658,19 @@ function DangerZone({ onToast }: { onToast: (m: string) => void }) {
       onToast(t("settings.advanced.resetDone"));
       setTimeout(() => location.reload(), 900);
     } catch (e) {
-      onToast(errorText(e));
+      reportError(e);
     }
   };
-  const clearData = async () => {
-    if (!window.confirm(t("settings.advanced.clearConfirm"))) return;
+  const doClear = async () => {
     try {
       await api.clearAllData();
       await qc.invalidateQueries();
       onToast(t("settings.advanced.clearDone"));
     } catch (e) {
-      onToast(errorText(e));
+      reportError(e);
     }
   };
+
   return (
     <div className="settings-group">
       <h3 className="settings-group-title">{t("settings.advanced.dangerZone")}</h3>
@@ -1671,7 +1678,7 @@ function DangerZone({ onToast }: { onToast: (m: string) => void }) {
         label={t("settings.advanced.resetSettings")}
         desc={t("settings.advanced.resetSettingsDesc")}
       >
-        <button className="s-btn" onClick={resetAll}>
+        <button className="s-btn" onClick={() => setConfirming("reset")}>
           {t("settings.advanced.reset")}
         </button>
       </Row>
@@ -1679,10 +1686,28 @@ function DangerZone({ onToast }: { onToast: (m: string) => void }) {
         label={t("settings.advanced.clearData")}
         desc={t("settings.advanced.clearDataDesc")}
       >
-        <button className="s-btn danger" onClick={clearData}>
+        <button className="s-btn danger" onClick={() => setConfirming("clear")}>
           {t("settings.advanced.clear")}
         </button>
       </Row>
+      {confirming === "reset" && (
+        <ConfirmDialog
+          title={t("settings.advanced.resetSettings")}
+          message={t("settings.advanced.resetConfirm")}
+          confirmLabel={t("settings.advanced.reset")}
+          onConfirm={doReset}
+          onClose={() => setConfirming(null)}
+        />
+      )}
+      {confirming === "clear" && (
+        <ConfirmDialog
+          title={t("settings.advanced.clearData")}
+          message={t("settings.advanced.clearConfirm")}
+          confirmLabel={t("common.delete")}
+          onConfirm={doClear}
+          onClose={() => setConfirming(null)}
+        />
+      )}
     </div>
   );
 }
@@ -1727,7 +1752,7 @@ function AiSettingsGroup({ onToast }: { onToast: (m: string) => void }) {
     api
       .setSetting(key, value)
       .then(() => onToast(t("settings.advanced.aiSaved", { label })))
-      .catch((e) => onToast(errorText(e)));
+      .catch((e) => reportError(e));
   };
 
   const placeholder =
@@ -1774,7 +1799,7 @@ function AiSettingsGroup({ onToast }: { onToast: (m: string) => void }) {
                   }),
                 ),
               )
-              .catch((e) => onToast(errorText(e)));
+              .catch((e) => reportError(e));
           }}
         />
       </Row>
@@ -1870,7 +1895,7 @@ function FiltersSection({
     api
       .updateRule(r.id, r.name, !r.enabled, r.feedId, r.field, r.query, r.action)
       .then(refresh)
-      .catch((e) => onToast(errorText(e)));
+      .catch((e) => reportError(e));
 
   const remove = (r: Rule) =>
     api
@@ -1879,7 +1904,7 @@ function FiltersSection({
         refresh();
         onToast(t("settings.filters.deleted"));
       })
-      .catch((e) => onToast(errorText(e)));
+      .catch((e) => reportError(e));
 
   const summary = (r: Rule) =>
     [
@@ -2040,7 +2065,7 @@ function RuleEditor({
       }
       onSaved();
     } catch (e) {
-      onToast(errorText(e));
+      reportError(e);
       setBusy(false);
     }
   };

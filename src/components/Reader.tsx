@@ -8,7 +8,7 @@ import { usePlayer } from "../player";
 import { useArticleActions } from "../hooks/articleActions";
 import { renderMarkdown } from "../lib/markdown";
 import { fullDate } from "../lib/feedMeta";
-import { errorText } from "../lib/errors";
+import { reportError, toast } from "../toast";
 import { tagColor } from "../lib/tagColors";
 import type { ArticleDetail } from "../types";
 import Icon from "./Icon";
@@ -137,9 +137,8 @@ function makeLinkClickHandler(sourceUrl: string | null) {
 export default function Reader({ onToast }: Props) {
   const { t } = useTranslation();
   const qc = useQueryClient();
-  const actions = useArticleActions(onToast);
+  const actions = useArticleActions(toast.error);
   const id = useUi((s) => s.selectedArticleId);
-  const useSerif = useUi((s) => s.useSerif);
   const focusMode = useUi((s) => s.focusMode);
   const setFocusMode = useUi((s) => s.setFocusMode);
   const aiOpen = useUi((s) => s.aiOpen);
@@ -232,7 +231,7 @@ export default function Reader({ onToast }: Props) {
         onToast(t("reader.fullTextExtracted"));
       }
     },
-    onError: (e) => onToast(errorText(e)),
+    onError: (e) => reportError(e),
   });
 
   // With "auto-extract full text" on, a summary-only feed item is upgraded to
@@ -627,7 +626,6 @@ export default function Reader({ onToast }: Props) {
           <div
             className="article-body"
             ref={bodyRef}
-            data-serif={useSerif}
             onClick={makeLinkClickHandler(a.url)}
             dangerouslySetInnerHTML={{
               __html: body || `<p><em>${t("reader.noContent")}</em></p>`,
@@ -644,7 +642,6 @@ export default function Reader({ onToast }: Props) {
         open={aiOpen}
         article={a}
         onClose={() => setAiOpen(false)}
-        onToast={onToast}
       />
 
       {tagPick && (
@@ -654,7 +651,6 @@ export default function Reader({ onToast }: Props) {
           x={tagPick.x}
           y={tagPick.y}
           onClose={() => setTagPick(null)}
-          onToast={onToast}
         />
       )}
 
@@ -675,12 +671,10 @@ function AIDrawer({
   open,
   article,
   onClose,
-  onToast,
 }: {
   open: boolean;
   article: ArticleDetail;
   onClose: () => void;
-  onToast: (m: string) => void;
 }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -726,7 +720,7 @@ function AIDrawer({
         else if (ev.type === "error") {
           sawErrorEvent = true;
           setFailed(true);
-          onToast(ev.data);
+          toast.error(ev.data);
         }
       })
       .then(() => {
@@ -735,7 +729,7 @@ function AIDrawer({
       .catch((e) => {
         if (!cancelled && !sawErrorEvent) {
           setFailed(true);
-          onToast(errorText(e));
+          reportError(e);
         }
       })
       .finally(() => {

@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import * as api from "../api";
 import { useUi } from "../store";
 import { useArticleActions } from "../hooks/articleActions";
-import { errorText } from "../lib/errors";
+import { withUndo, reportError } from "../toast";
 import { tagColor, TAG_PALETTE } from "../lib/tagColors";
 import type { ArticleQuery, Feed, Folder, Tag } from "../types";
 import Icon, { type IconName } from "./Icon";
@@ -126,38 +126,73 @@ export default function Sidebar({
         actions.refreshAfterBulk();
         onToast(ok);
       })
-      .catch((e) => onToast(errorText(e)));
+      .catch((e) => reportError(e));
 
-  // After deleting a feed / folder / tag, the active sidebar selection may
-  // still point at the entity that no longer exists — leaving the article
-  // list stranded on an empty list under the deleted entity's name. Reset the
-  // view to "All" in that case. Deleting a feed also cascade-deletes its
-  // articles, so a still-open article from that feed must be cleared too
-  // (otherwise the reader is left showing a load error). `guard`'s promise
-  // resolves only on success, so this never fires for a failed delete.
+  // Destructive feed/folder/tag deletes run behind an Undo window: the row
+  // disappears at once, but the irreversible backend call is deferred ~6s so
+  // a misclick can be taken back. `makeDelete` is a thunk — the backend call
+  // must not start until the window actually closes.
+  //
+  // The optimistic removal also resets a now-dangling selection: the active
+  // view, or the open article, may point at the entity that just vanished.
+  // Deleting a feed cascade-deletes its articles, so a still-open article
+  // from it is closed too (the reader would otherwise show a load error).
   const guardDelete = (
-    p: Promise<unknown>,
-    ok: string,
+    makeDelete: () => Promise<unknown>,
+    toastText: string,
     kind: "feed" | "folder" | "tag",
     id: number,
-  ) =>
-    guard(
-      p.then(() => {
+  ) => {
+    const cacheKey =
+      kind === "feed" ? "feeds" : kind === "folder" ? "folders" : "tags";
+    // Snapshots taken before the optimistic edit, restored verbatim on undo
+    // (or if the eventual delete fails).
+    const prevList = qc.getQueryData<{ id: number }[]>([cacheKey]);
+    const prevFeeds =
+      kind === "folder" ? qc.getQueryData<Feed[]>(["feeds"]) : undefined;
+    const restore = () => {
+      if (prevList) qc.setQueryData([cacheKey], prevList);
+      if (prevFeeds) qc.setQueryData(["feeds"], prevFeeds);
+    };
+
+    withUndo({
+      text: toastText,
+      apply: () => {
+        qc.setQueryData<{ id: number }[]>([cacheKey], (old) =>
+          old?.filter((x) => x.id !== id),
+        );
+        // Deleting a folder orphans its feeds to "uncategorized" (the DB FK
+        // is ON DELETE SET NULL) — mirror that so they don't briefly vanish
+        // from the tree during the undo window.
+        if (kind === "folder") {
+          qc.setQueryData<Feed[]>(["feeds"], (old) =>
+            old?.map((f) =>
+              f.folderId === id ? { ...f, folderId: null } : f,
+            ),
+          );
+        }
         const st = useUi.getState();
         if (st.query.kind === kind && st.query.value === id) {
           st.select({ kind: "all" }, t("smart.all"));
         } else if (kind === "feed" && st.selectedArticleId != null) {
-          // A different view is active, but the open article may belong to
-          // the feed just unsubscribed — its detail is gone, so close it.
           const open = qc.getQueryData<{ feedId: number }>([
             "article",
             st.selectedArticleId,
           ]);
           if (open?.feedId === id) st.openArticle(null);
         }
-      }),
-      ok,
-    );
+      },
+      commit: () => {
+        makeDelete()
+          .then(() => actions.refreshAfterBulk())
+          .catch((e) => {
+            restore();
+            reportError(e);
+          });
+      },
+      revert: restore,
+    });
+  };
 
   const allFeeds = feeds.data ?? [];
   const allFolders = folders.data ?? [];
@@ -231,7 +266,7 @@ export default function Sidebar({
         danger: true,
         onClick: () =>
           guardDelete(
-            api.deleteFeed(f.id),
+            () => api.deleteFeed(f.id),
             t("sidebar.toastUnsubscribed", { feed: f.title }),
             "feed",
             f.id,
@@ -269,7 +304,7 @@ export default function Sidebar({
       danger: true,
       onClick: () =>
         guardDelete(
-          api.deleteFolder(folder.id),
+          () => api.deleteFolder(folder.id),
           t("sidebar.toastFolderDeleted"),
           "folder",
           folder.id,
@@ -324,7 +359,7 @@ export default function Sidebar({
         api
           .setTagColor(tag.id, color)
           .then(() => actions.refreshAfterBulk())
-          .catch((e) => onToast(errorText(e))),
+          .catch((e) => reportError(e)),
     },
     { separator: true },
     {
@@ -333,7 +368,7 @@ export default function Sidebar({
       danger: true,
       onClick: () =>
         guardDelete(
-          api.deleteTag(tag.id),
+          () => api.deleteTag(tag.id),
           t("sidebar.toastTagDeleted"),
           "tag",
           tag.id,
@@ -356,7 +391,7 @@ export default function Sidebar({
     qc.setQueryData(["tags"], next);
     api
       .reorderTags(next.map((tg) => tg.id))
-      .catch((e) => onToast(errorText(e)))
+      .catch((e) => reportError(e))
       .finally(() => qc.invalidateQueries({ queryKey: ["tags"] }));
   };
 

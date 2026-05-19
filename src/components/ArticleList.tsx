@@ -7,7 +7,7 @@ import * as api from "../api";
 import { useUi } from "../store";
 import { useArticleActions } from "../hooks/articleActions";
 import { feedAvatar, feedColor, relTime } from "../lib/feedMeta";
-import { errorText } from "../lib/errors";
+import { reportError, toast } from "../toast";
 import { clampToViewport } from "../lib/viewport";
 import type { ArticleSummary, Feed } from "../types";
 import Icon from "./Icon";
@@ -28,7 +28,7 @@ interface Hover {
 
 export default function ArticleList({ onToast }: Props) {
   const { t } = useTranslation();
-  const actions = useArticleActions(onToast);
+  const actions = useArticleActions(toast.error);
   const query = useUi((s) => s.query);
   const queryLabel = useUi((s) => s.queryLabel);
   const unreadOnly = useUi((s) => s.unreadOnly);
@@ -149,7 +149,7 @@ export default function ArticleList({ onToast }: Props) {
           : t("articleList.nothingToMark"),
       );
     } catch (e) {
-      onToast(errorText(e));
+      reportError(e);
     }
   };
 

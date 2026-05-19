@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import * as api from "../api";
 import { useDismiss } from "../hooks/useDismiss";
-import { errorText } from "../lib/errors";
+import { reportError } from "../toast";
 import { tagColor } from "../lib/tagColors";
 import { clampToViewport } from "../lib/viewport";
 import Icon from "./Icon";
@@ -16,7 +16,6 @@ interface Props {
   x: number;
   y: number;
   onClose: () => void;
-  onToast: (msg: string) => void;
 }
 
 /**
@@ -29,7 +28,6 @@ export default function TagPicker({
   x,
   y,
   onClose,
-  onToast,
 }: Props) {
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -63,7 +61,7 @@ export default function TagPicker({
     api
       .setArticleTag(articleId, tagId, on)
       .then(sync)
-      .catch((e) => onToast(errorText(e)));
+      .catch((e) => reportError(e));
 
   const createAndAttach = async () => {
     const name = draft.trim();
@@ -74,7 +72,7 @@ export default function TagPicker({
       setDraft("");
       sync();
     } catch (e) {
-      onToast(errorText(e));
+      reportError(e);
     }
   };
 

@@ -5,10 +5,10 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import * as api from "./api";
-import { useUi } from "./store";
+import { useUi, READER_FONTS } from "./store";
 import { useArticleActions } from "./hooks/articleActions";
 import { readCurrentItems } from "./lib/currentList";
-import { errorText } from "./lib/errors";
+import { useToasts, toast as toastApi, reportError } from "./toast";
 import type { ArticleQuery, ArticleSummary, Feed } from "./types";
 import Sidebar from "./components/Sidebar";
 import ArticleList from "./components/ArticleList";
@@ -19,6 +19,7 @@ import AddFeedDialog from "./components/AddFeedDialog";
 import ExploreDialog from "./components/ExploreDialog";
 import PromptDialog from "./components/PromptDialog";
 import PlayerBar from "./components/PlayerBar";
+import Icon from "./components/Icon";
 
 // Accent palettes — ported from the design prototype (app.jsx ACCENTS).
 const ACCENTS: Record<
@@ -31,10 +32,6 @@ const ACCENTS: Record<
   ink: { accent: "oklch(0.30 0.02 50)", soft: "oklch(0.92 0.005 50)", ink: "oklch(0.20 0.01 50)", dAccent: "oklch(0.86 0.005 50)", dSoft: "oklch(0.30 0.005 50)", dInk: "oklch(0.92 0.005 50)" },
 };
 
-// `id` is stamped once per toast so the render key is stable across unrelated
-// re-renders — keying on `Date.now()` would remount and replay the animation.
-type Toast = { text: string; kbd?: string; id: number };
-
 export default function App() {
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -42,13 +39,15 @@ export default function App() {
   const theme = useUi((s) => s.theme);
   const accent = useUi((s) => s.accent);
   const density = useUi((s) => s.density);
+  const readerFont = useUi((s) => s.readerFont);
   const readerSize = useUi((s) => s.readerSize);
   const readerLeading = useUi((s) => s.readerLeading);
   const readerWidth = useUi((s) => s.readerWidth);
   const reduceMotion = useUi((s) => s.prefs.reduceMotion);
   const focusMode = useUi((s) => s.focusMode);
 
-  const [toast, setToast] = useState<Toast | null>(null);
+  const activeToast = useToasts((s) => s.current);
+  const dismissToast = useToasts((s) => s.dismiss);
   const [refreshing, setRefreshing] = useState(false);
   const [cpOpen, setCpOpen] = useState(false);
   const [settings, setSettings] = useState<{ open: boolean; section?: string }>({
@@ -60,7 +59,6 @@ export default function App() {
   // The standalone Explore (curated-directory marketplace) dialog.
   const [explore, setExplore] = useState(false);
   const [newFolder, setNewFolder] = useState(false);
-  const toastTimer = useRef<number | undefined>(undefined);
 
   // ── apply appearance to the document root ──
   useEffect(() => {
@@ -137,20 +135,28 @@ export default function App() {
 
   useEffect(() => {
     const root = document.documentElement.style;
+    const font = READER_FONTS[readerFont];
+    root.setProperty("--reader-font", font.stack);
+    root.setProperty("--reader-font-adjust", font.adjust);
     root.setProperty("--reader-size", `${readerSize}px`);
     root.setProperty("--reader-leading", String(readerLeading / 100));
     root.setProperty("--reader-width", `${readerWidth}px`);
-  }, [readerSize, readerLeading, readerWidth]);
+  }, [readerFont, readerSize, readerLeading, readerWidth]);
 
   // ── toast ──
-  const showToast = useCallback((text: string, kbd?: string) => {
-    setToast({ text, kbd, id: Date.now() });
-    window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToast(null), 1900);
-  }, []);
+  // The store owns the queue; App owns only the dwell timer and the render.
+  const showToast = toastApi.show;
+  useEffect(() => {
+    if (!activeToast) return;
+    const timer = window.setTimeout(
+      () => dismissToast(activeToast.id),
+      activeToast.duration,
+    );
+    return () => window.clearTimeout(timer);
+  }, [activeToast, dismissToast]);
 
-  // Declared after showToast so a failed mark action surfaces a toast.
-  const actions = useArticleActions(showToast);
+  // Article-action failures route to an error toast, not a silent default one.
+  const actions = useArticleActions(toastApi.error);
 
   // ── background refresh events from the Rust scheduler ──
   useEffect(() => {
@@ -216,7 +222,7 @@ export default function App() {
         actions.refreshAfterFetch();
         showToast(n > 0 ? t("app.foundNew", { count: n }) : t("app.upToDate"));
       })
-      .catch((e) => showToast(errorText(e)))
+      .catch(reportError)
       .finally(() => {
         refreshingRef.current = false;
         setRefreshing(false);
@@ -229,7 +235,7 @@ export default function App() {
       actions.refreshAfterBulk();
       showToast(n > 0 ? t("app.markedRead", { count: n }) : t("app.nothingToMark"));
     } catch (e) {
-      showToast(errorText(e));
+      reportError(e);
     }
   }, [actions, showToast, t]);
 
@@ -474,19 +480,47 @@ export default function App() {
                 qc.invalidateQueries({ queryKey: ["folders"] });
                 showToast(t("app.folderCreated"));
               })
-              .catch((e) => showToast(errorText(e)))
+              .catch(reportError)
           }
           onClose={() => setNewFolder(false)}
         />
       )}
 
-      {/* A persistent status region so screen readers announce each toast;
-          the toast itself is position: fixed, so the wrapper adds no layout. */}
-      <div role="status">
-        {toast && (
-          <div className="toast" key={toast.id}>
-            {toast.text}
-            {toast.kbd && <kbd aria-hidden="true">{toast.kbd}</kbd>}
+      {/* A live region so screen readers announce each toast; the toast
+          itself is position: fixed, so the wrapper adds no layout. */}
+      <div role="status" aria-live="polite">
+        {activeToast && (
+          <div
+            className={`toast${activeToast.tone === "error" ? " toast-error" : ""}`}
+            key={activeToast.id}
+          >
+            {activeToast.tone === "error" && (
+              <span className="toast-ico" aria-hidden="true">
+                <Icon name="alert" size={14} />
+              </span>
+            )}
+            <span className="toast-text">{activeToast.text}</span>
+            {activeToast.kbd && <kbd aria-hidden="true">{activeToast.kbd}</kbd>}
+            {activeToast.action && (
+              <button
+                className="toast-action"
+                onClick={() => {
+                  activeToast.action!.run();
+                  dismissToast(activeToast.id);
+                }}
+              >
+                {activeToast.action.label}
+              </button>
+            )}
+            {(activeToast.tone === "error" || activeToast.action) && (
+              <button
+                className="toast-dismiss"
+                aria-label={t("common.close")}
+                onClick={() => dismissToast(activeToast.id)}
+              >
+                <Icon name="x" size={13} />
+              </button>
+            )}
           </div>
         )}
       </div>

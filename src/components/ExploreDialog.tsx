@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import * as api from "../api";
 import { useArticleActions } from "../hooks/articleActions";
 import { useFocusTrap } from "../hooks/useFocusTrap";
-import { errorText } from "../lib/errors";
+import { reportError } from "../toast";
 import FeedAvatar from "./FeedAvatar";
 import Icon from "./Icon";
 
@@ -71,7 +71,7 @@ export default function ExploreDialog({ onClose, onToast }: Props) {
       actions.refreshAfterBulk();
       onToast(t("explore.subscribedToast", { title: feed.title }));
     },
-    onError: (e) => onToast(errorText(e)),
+    onError: (e) => reportError(e),
   });
   const pendingUrl = add.isPending ? add.variables ?? null : null;
 
