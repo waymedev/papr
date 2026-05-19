@@ -353,8 +353,18 @@ export default function ArticleList({ onToast }: Props) {
               const feed = feedById[a.feedId];
               const color = feedColor(a.feedId);
               return (
+                // Key by the virtual slot, not the article id. The window of
+                // rendered rows is a fixed band that slides as you scroll, so
+                // keying by index lets React keep the same ~dozen DOM nodes
+                // mounted and just swap their content + transform. Keying by
+                // `a.id` instead remounts a node every time the window slides,
+                // restarting `measureElement` from its estimate each time — a
+                // freshly mounted row briefly reports the 98px estimate before
+                // the real ~130px is measured, so the row below it renders too
+                // high and overlaps. (It also collides when offset pagination
+                // returns the same article on two pages.)
                 <div
-                  key={a.id}
+                  key={vi.key}
                   data-index={vi.index}
                   ref={virt.measureElement}
                   style={{
