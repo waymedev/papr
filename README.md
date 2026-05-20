@@ -6,7 +6,7 @@
 
 A fast, native RSS reader for the desktop.
 
-<img src="docs/screenshot.png" alt="Papr" width="820" />
+<img src="docs/screenshot.webp" alt="Papr" width="820" />
 
 </div>
 
