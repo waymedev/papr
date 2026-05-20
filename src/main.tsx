@@ -21,6 +21,15 @@ import "./styles.css";
 // dead space at the top before a layout-shifting effect runs.
 document.documentElement.dataset.platform = isMac ? "mac" : "other";
 
+// Suppress the webview's default context menu — its "Reload / Back / Inspect"
+// entries belong to a browser, not a finished app. Editable surfaces still get
+// the native menu so paste / select-all / spellcheck stay available.
+window.addEventListener("contextmenu", (e) => {
+  const t = e.target as HTMLElement | null;
+  if (t?.closest("input, textarea, [contenteditable=''], [contenteditable='true']")) return;
+  e.preventDefault();
+});
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: { staleTime: 30_000, refetchOnWindowFocus: false, retry: 1 },
