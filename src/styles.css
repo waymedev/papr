@@ -164,7 +164,7 @@ button { font-family: inherit; }
    thin breathing strip is enough — without it the search bar would sit
    flush against the window chrome. */
 :root[data-platform="mac"] .sidebar { padding-top: 38px; }
-:root[data-platform="other"] .sidebar { padding-top: 12px; }
+:root[data-platform="other"] .sidebar { padding-top: 24px; }
 
 .sb-brand {
   display: flex;
