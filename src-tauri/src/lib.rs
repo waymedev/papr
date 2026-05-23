@@ -205,6 +205,7 @@ pub fn run() {
             commands::mark_all_read,
             commands::smart_counts,
             commands::extract_fulltext,
+            commands::fetch_article_full_text,
             commands::import_opml,
             commands::export_opml,
             commands::get_setting,

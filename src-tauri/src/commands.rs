@@ -394,6 +394,74 @@ pub async fn extract_fulltext(state: State<'_, AppState>, article_id: i64) -> Ap
     Ok(extracted)
 }
 
+/// Provider for the in-reader "fetch full text" dropdown. Both providers
+/// accept a target URL appended directly to a host prefix — no percent-encoding
+/// of the embedded URL.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FullTextProvider {
+    /// defuddle.md returns reader-mode HTML.
+    Defuddle,
+    /// r.jina.ai returns LLM-friendly Markdown.
+    Jina,
+}
+
+/// Response from `fetch_article_full_text`. `body` is the raw provider payload
+/// (HTML or Markdown depending on `provider`); the frontend picks the renderer.
+#[derive(Debug, Serialize)]
+pub struct FullTextResponse {
+    pub provider: &'static str,
+    pub body: String,
+    pub source_url: String,
+}
+
+/// Compose the provider request URL. Both providers want the target URL
+/// appended verbatim — no percent-encoding, matching the documented form
+/// (e.g. `https://defuddle.md/https://blog.example.com/p/…`).
+fn full_text_provider_url(
+    provider: FullTextProvider,
+    target_url: &str,
+) -> (&'static str, String) {
+    match provider {
+        FullTextProvider::Defuddle => (
+            "defuddle",
+            format!("https://defuddle.md/{}", target_url),
+        ),
+        FullTextProvider::Jina => ("jina", format!("https://r.jina.ai/{}", target_url)),
+    }
+}
+
+/// Fetch the article body through an external reader-mode service. Bypasses
+/// browser CORS by going through the Tauri HTTP client, and **does not write
+/// the result back to the database** — the caller renders it in-place only.
+#[tauri::command]
+pub async fn fetch_article_full_text(
+    state: State<'_, AppState>,
+    article_id: i64,
+    provider: FullTextProvider,
+) -> AppResult<FullTextResponse> {
+    let url = {
+        let conn = state.read().await;
+        db::get_article(&conn, article_id)?
+            .url
+            .ok_or_else(|| AppError::code("noArticleUrl"))?
+    };
+
+    let (provider_id, request_url) = full_text_provider_url(provider, &url);
+
+    let http = state.http();
+    let (bytes, ct, _final_url) = fetch::get(&http, &request_url).await?;
+    let body = fetch::decode_html(&bytes, ct.as_deref());
+    if body.trim().is_empty() {
+        return Err(AppError::code("emptyFullTextResponse"));
+    }
+    Ok(FullTextResponse {
+        provider: provider_id,
+        body,
+        source_url: url,
+    })
+}
+
 // ─────────────────────────── OPML ───────────────────────────
 
 #[tauri::command]
@@ -1388,4 +1456,36 @@ pub async fn set_highlight_color(
 pub async fn delete_highlight(state: State<'_, AppState>, id: i64) -> AppResult<()> {
     let conn = state.db.lock().await;
     db::delete_highlight(&conn, id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{full_text_provider_url, FullTextProvider};
+
+    #[test]
+    fn defuddle_appends_target_url_verbatim() {
+        let (id, url) = full_text_provider_url(
+            FullTextProvider::Defuddle,
+            "https://blog.bytebytego.com/p/some-article",
+        );
+        assert_eq!(id, "defuddle");
+        // Critical: no percent-encoding of the embedded URL.
+        assert_eq!(
+            url,
+            "https://defuddle.md/https://blog.bytebytego.com/p/some-article"
+        );
+    }
+
+    #[test]
+    fn jina_appends_target_url_verbatim() {
+        let (id, url) = full_text_provider_url(
+            FullTextProvider::Jina,
+            "https://example.com/posts/42?a=1&b=2",
+        );
+        assert_eq!(id, "jina");
+        assert_eq!(
+            url,
+            "https://r.jina.ai/https://example.com/posts/42?a=1&b=2"
+        );
+    }
 }

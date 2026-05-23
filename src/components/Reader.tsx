@@ -7,7 +7,7 @@ import { useUi } from "../store";
 import { usePlayer } from "../player";
 import { useTranslationJobs } from "../translation";
 import { useArticleActions } from "../hooks/articleActions";
-import { renderMarkdown } from "../lib/markdown";
+import { renderMarkdown, renderProviderBody } from "../lib/markdown";
 import { fullDate } from "../lib/feedMeta";
 import { isMac } from "../lib/platform";
 import { reportError, toast } from "../toast";
@@ -151,6 +151,14 @@ export default function Reader({ onToast }: Props) {
   const autoExtract = useUi((s) => s.prefs.autoExtract);
 
   const [scrolled, setScrolled] = useState(false);
+  // External "fetch full text" override (defuddle.md / r.jina.ai). Result is
+  // not persisted — it replaces the displayed body only, and is cleared on
+  // article switch so a stale override never leaks across articles.
+  const [providerBody, setProviderBody] = useState<{
+    provider: api.FullTextProvider;
+    html: string;
+  } | null>(null);
+  const [providerMenu, setProviderMenu] = useState<{ x: number; y: number } | null>(null);
   // Which body to show when an extraction exists follows the "auto-extract"
   // setting: off (the default) shows the feed's own content and extraction is
   // opt-in via the toolbar button; on shows the extracted full text.
@@ -190,6 +198,8 @@ export default function Reader({ onToast }: Props) {
     setTagPick(null);
     setHeroBroken(false);
     setProgress(0);
+    setProviderBody(null);
+    setProviderMenu(null);
     scrollMarkedRef.current = null;
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [id]);
@@ -250,6 +260,38 @@ export default function Reader({ onToast }: Props) {
   // it resolves. Keying onSuccess off the live `a` would invalidate the wrong
   // article (the extracted text never shows on return) and toast "full text
   // extracted" while reading an unrelated, un-extracted article.
+  // Pull the article through one of the external reader-mode services
+  // (defuddle.md / r.jina.ai). The result overrides the displayed body in
+  // memory only — never written back to the DB. Carries the live article id
+  // (not the closure `a`) so a switch mid-fetch doesn't paint another
+  // article's body.
+  const fetchFullText = useMutation({
+    mutationFn: ({
+      articleId,
+      provider,
+    }: {
+      articleId: number;
+      provider: api.FullTextProvider;
+    }) => api.fetchArticleFullText(articleId, provider),
+    onSuccess: (res, vars) => {
+      if (useUi.getState().selectedArticleId !== vars.articleId) return;
+      const html = renderProviderBody(
+        res.body,
+        vars.provider === "jina" ? "markdown" : "html",
+      );
+      if (!html.trim()) {
+        reportError(new Error(t("reader.providerEmpty")));
+        return;
+      }
+      setProviderBody({ provider: vars.provider, html });
+      // Provider-fetched body is shown directly; turn off the
+      // extraction/translation toggles so the views don't compete.
+      setShowTranslation(false);
+      onToast(t("reader.providerFetched"));
+    },
+    onError: (e) => reportError(e),
+  });
+
   const extract = useMutation({
     mutationFn: (articleId: number) => api.extractFulltext(articleId),
     onSuccess: (_data, articleId) => {
@@ -443,9 +485,15 @@ export default function Reader({ onToast }: Props) {
   }
 
   const hasExtracted = !!a.extractedHtml;
-  const canTranslate = !!(a.extractedHtml || a.contentHtml);
-  const baseBody =
-    (showExtracted && a.extractedHtml ? a.extractedHtml : a.contentHtml) || "";
+  // The provider-fetched override beats every other body source when present —
+  // it is what the user explicitly asked for. Translation is disabled while it
+  // is showing (the live job and persisted copy were produced against a
+  // different body) so the toggle doesn't paint a stale translation over it.
+  const providerActive = !!providerBody;
+  const canTranslate = !providerActive && !!(a.extractedHtml || a.contentHtml);
+  const baseBody = providerBody
+    ? providerBody.html
+    : (showExtracted && a.extractedHtml ? a.extractedHtml : a.contentHtml) || "";
 
   // A translation is "current" for this article only when it was produced for
   // the active target language — a stale-language copy (cache or a job for a
@@ -532,6 +580,42 @@ export default function Reader({ onToast }: Props) {
           <Icon name="text" size={16} />
         </button>
         <button
+          className={`tb-btn ${providerActive ? "on" : ""} ${
+            fetchFullText.isPending ? "spinning" : ""
+          }`}
+          onClick={(e) => {
+            if (providerActive) {
+              // Second click while an override is showing — drop back to the
+              // original feed/extracted body. The menu is suppressed so the
+              // common "undo" path is one click.
+              setProviderBody(null);
+              setProviderMenu(null);
+              return;
+            }
+            const r = e.currentTarget.getBoundingClientRect();
+            setProviderMenu((p) =>
+              p ? null : { x: r.left, y: r.bottom + 6 },
+            );
+          }}
+          disabled={fetchFullText.isPending || !a.url}
+          title={
+            providerActive
+              ? t("reader.tbFetchFullTextRevert")
+              : t("reader.tbFetchFullText")
+          }
+          aria-label={
+            providerActive
+              ? t("reader.tbFetchFullTextRevert")
+              : t("reader.tbFetchFullText")
+          }
+          aria-haspopup="menu"
+          aria-expanded={providerMenu != null}
+          aria-pressed={providerActive}
+          aria-busy={fetchFullText.isPending}
+        >
+          <Icon name="globe" size={16} />
+        </button>
+        <button
           className="tb-btn"
           title={t("reader.tbShare")}
           aria-label={t("reader.tbShare")}
@@ -597,6 +681,25 @@ export default function Reader({ onToast }: Props) {
               <>
                 <span>·</span>
                 <span>{t("reader.extractingFullText")}</span>
+              </>
+            )}
+            {fetchFullText.isPending && (
+              <>
+                <span>·</span>
+                <span>{t("reader.fetchingFullText")}</span>
+              </>
+            )}
+            {providerActive && providerBody && (
+              <>
+                <span>·</span>
+                <span>
+                  {t("reader.viaProvider", {
+                    provider:
+                      providerBody.provider === "jina"
+                        ? t("reader.providerJinaLabel")
+                        : t("reader.providerDefuddleLabel"),
+                  })}
+                </span>
               </>
             )}
           </div>
@@ -725,6 +828,28 @@ export default function Reader({ onToast }: Props) {
         article={a}
         onClose={() => setAiOpen(false)}
       />
+
+      {providerMenu && (
+        <ContextMenu
+          x={providerMenu.x}
+          y={providerMenu.y}
+          items={[
+            {
+              icon: "globe",
+              label: t("reader.providerDefuddleLabel"),
+              onClick: () =>
+                fetchFullText.mutate({ articleId: a.id, provider: "defuddle" }),
+            },
+            {
+              icon: "globe",
+              label: t("reader.providerJinaLabel"),
+              onClick: () =>
+                fetchFullText.mutate({ articleId: a.id, provider: "jina" }),
+            },
+          ]}
+          onClose={() => setProviderMenu(null)}
+        />
+      )}
 
       {tagPick && (
         <TagPicker
