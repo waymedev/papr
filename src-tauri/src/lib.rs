@@ -11,6 +11,7 @@ mod ingestion;
 mod models;
 mod notify;
 mod opml;
+mod readwise_reader;
 mod sanitize;
 mod state;
 mod sync;
