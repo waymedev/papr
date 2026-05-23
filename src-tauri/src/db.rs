@@ -516,13 +516,18 @@ pub fn list_feeds(conn: &Connection) -> AppResult<Vec<Feed>> {
 /// the last two are the stored revalidators for a conditional GET.
 pub type FeedToRefresh = (i64, String, Option<String>, Option<String>);
 
-/// All feeds that need an HTTP fetch. Newsletter sources are excluded — they
-/// are polled over IMAP separately (see `scheduler::poll_newsletters`); their
-/// synthetic `imap://` feed_url is not an HTTP-fetchable document.
+/// All feeds that need an HTTP fetch. Sources that aren't HTTP-fetchable feed
+/// documents are excluded:
+/// - Newsletters are polled over IMAP (see `scheduler::poll_newsletters`); their
+///   synthetic `imap://` feed_url is not a fetchable feed document.
+/// - Readwise Reader sources are pulled through the Reader API (see
+///   `readwise_reader::fetch_documents`, driven by the `readwise_reader_sync`
+///   Tauri command); the synthetic `readwise://` feed_url is likewise not an
+///   RSS document and would 404 if the refresh loop tried to GET it.
 pub fn feeds_to_refresh(conn: &Connection) -> AppResult<Vec<FeedToRefresh>> {
     let mut stmt = conn.prepare(
         "SELECT id, feed_url, etag, last_modified FROM feeds
-         WHERE source_type != 'newsletter'",
+         WHERE source_type NOT IN ('newsletter', 'readwise')",
     )?;
     let rows = stmt
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
@@ -614,17 +619,22 @@ pub fn delete_feed(conn: &Connection, id: i64) -> AppResult<()> {
     Ok(())
 }
 
-/// Feeds for OPML export as `(title, feed_url, folder)` tuples. Newsletter
-/// sources are excluded: OPML is an RSS-subscription interchange format, and a
-/// newsletter's `feed_url` is a synthetic `imap://user@host:port/folder`
-/// string — exporting it would emit an `<outline xmlUrl="imap://…">` that any
-/// reader (Papr's own `import_opml` included) would treat as an RSS feed and
-/// then fail to HTTP-fetch forever, with the IMAP credentials not even carried.
+/// Feeds for OPML export as `(title, feed_url, folder)` tuples. Sources whose
+/// `feed_url` is not a real, re-importable RSS document are excluded:
+/// - Newsletters: synthetic `imap://user@host:port/folder` — would round-trip
+///   through `import_opml` as a broken RSS feed, and the IMAP credentials are
+///   not carried by OPML anyway.
+/// - Readwise Reader: synthetic `readwise://reader/later` — would likewise
+///   round-trip as a broken RSS feed; the Reader API is what populates it, and
+///   the user reconnects via Settings → Integrations, not via OPML.
+///
+/// OPML is an RSS-subscription interchange format; both above stay out for the
+/// same reason.
 pub fn feeds_for_export(conn: &Connection) -> AppResult<Vec<(String, String, Option<String>)>> {
     let mut stmt = conn.prepare(
         "SELECT f.title, f.feed_url, fo.name
          FROM feeds f LEFT JOIN folders fo ON fo.id = f.folder_id
-         WHERE f.source_type != 'newsletter'
+         WHERE f.source_type NOT IN ('newsletter', 'readwise')
          ORDER BY fo.name, f.title",
     )?;
     let rows = stmt
@@ -890,6 +900,185 @@ pub fn upsert_article(
     // the user's point of view — report it as not-inserted so it is excluded
     // from new-article tallies.
     Ok(!start_read)
+}
+
+// ─────────────────────────── readwise reader ───────────────────────────
+
+/// `feed_url` of the single synthetic feed row created by the v15 migration for
+/// every Readwise Reader account. Exposed so the Tauri command path and the
+/// tests share one source of truth — drift here would silently break the
+/// `feeds_to_refresh` / `feeds_for_export` exclusion guards (both filter on
+/// `source_type`, but a misnamed URL would surface as a "missing readwise
+/// feed" error at sync time).
+pub const READWISE_FEED_URL: &str = "readwise://reader/later";
+
+/// Reader-API document fields that don't fit the generic `articles` schema but
+/// need to round-trip through the sync. The `articles`-shaped half is carried
+/// by [`NewArticle`]; this struct carries the rest and lands in
+/// `readwise_documents` keyed by `article_id`.
+///
+/// `updated_at` is the RFC3339 string the API returns (Reader emits it that
+/// way; the side-table column is `INTEGER` so we convert to a unix timestamp
+/// on the way in — a non-RFC3339 string becomes `NULL` rather than refusing
+/// the whole upsert, because the timestamp is incidental metadata, not a key).
+pub struct NewReaderDocument {
+    pub document_id: String,
+    pub readwise_url: Option<String>,
+    pub source_url: Option<String>,
+    pub location: Option<String>,
+    pub category: Option<String>,
+    pub reading_progress: Option<f64>,
+    pub updated_at: Option<String>,
+}
+
+/// Look up the id of the synthetic Readwise Reader feed inserted by the v15
+/// migration. Returns the localisable `noReadwiseFeed` code when missing —
+/// theoretically impossible (the migration inserts it unconditionally) but
+/// safer than `unwrap` for a column we read on every sync.
+pub fn readwise_feed_id(conn: &Connection) -> AppResult<i64> {
+    conn.query_row(
+        "SELECT id FROM feeds WHERE feed_url = ?1",
+        params![READWISE_FEED_URL],
+        |r| r.get(0),
+    )
+    .optional()?
+    .ok_or_else(|| AppError::code("noReadwiseFeed"))
+}
+
+/// Insert or update a Reader document. Unlike `upsert_article`'s `ON CONFLICT
+/// DO NOTHING` (RSS items are immutable from the feed's point of view, so a
+/// re-fetch reuses the original row), a Reader document is mutable on the
+/// Readwise side — the user changes its location (`new` → `later` → `archive`),
+/// the reading progress ticks up, and the html content may be re-extracted —
+/// so every field that comes from the Reader API must be overwritten on
+/// subsequent syncs. `DO NOTHING` here would freeze the article at its first-
+/// sync snapshot and silently drift from Reader's view of the same doc.
+///
+/// Returns `true` when a brand-new article row was created; `false` when an
+/// existing row was updated in place. Callers tally `true` returns into the
+/// "N new docs" toast the same way `upsert_article` does, while still picking
+/// up the in-place mutations for every existing doc.
+///
+/// All writes (article row, FTS index, side-table) land inside a single
+/// transaction so a mid-call failure cannot leave the article and the
+/// `readwise_documents` row out of sync, or the FTS index pointing at stale
+/// body text.
+pub fn upsert_readwise_document(
+    conn: &Connection,
+    feed_id: i64,
+    a: &NewArticle,
+    extra: &NewReaderDocument,
+) -> AppResult<bool> {
+    let tx = conn.unchecked_transaction()?;
+
+    // Was this document already stored? Use (feed_id, guid) — `guid` is the
+    // Reader document id, which is globally unique per Readwise account.
+    let existing: Option<i64> = tx
+        .query_row(
+            "SELECT id FROM articles WHERE feed_id = ?1 AND guid = ?2",
+            params![feed_id, a.guid],
+            |r| r.get(0),
+        )
+        .optional()?;
+
+    // `updated_at` arrives as an RFC3339 string; the side-table column is an
+    // INTEGER (unix seconds). Convert here so the rest of the upsert is plain
+    // SQL. An unparseable value (or `None`) falls through as SQL NULL — the
+    // timestamp is informational metadata, not a key, so we never reject an
+    // otherwise-valid document over it.
+    let updated_at_unix: Option<i64> = extra
+        .updated_at
+        .as_deref()
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.timestamp());
+
+    let (article_id, is_new) = match existing {
+        Some(id) => {
+            // Overwrite every field the Reader API owns. `is_read` /
+            // `is_starred` / `read_later` / `extracted_html` / `translated_*`
+            // are user-side state and must NOT be reset on a re-sync.
+            tx.execute(
+                "UPDATE articles SET
+                    url          = ?2,
+                    title        = ?3,
+                    author       = ?4,
+                    summary      = ?5,
+                    content_html = ?6,
+                    body_text    = ?7,
+                    image_url    = ?8,
+                    published_at = ?9
+                 WHERE id = ?1",
+                params![
+                    id,
+                    a.url,
+                    a.title,
+                    a.author,
+                    a.summary,
+                    a.content_html,
+                    a.body_text,
+                    a.image_url,
+                    a.published_at,
+                ],
+            )?;
+            // Keep the FTS index in step with the updated title / body.
+            tx.execute(
+                "UPDATE articles_fts SET title = ?2, body = ?3 WHERE rowid = ?1",
+                params![id, a.title, a.body_text],
+            )?;
+            (id, false)
+        }
+        None => {
+            tx.execute(
+                "INSERT INTO articles
+                    (feed_id, guid, url, title, author, summary, content_html,
+                     body_text, image_url, published_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                params![
+                    feed_id, a.guid, a.url, a.title, a.author, a.summary,
+                    a.content_html, a.body_text, a.image_url, a.published_at,
+                ],
+            )?;
+            let id = tx.last_insert_rowid();
+            tx.execute(
+                "INSERT INTO articles_fts(rowid, title, body) VALUES (?1, ?2, ?3)",
+                params![id, a.title, a.body_text],
+            )?;
+            (id, true)
+        }
+    };
+
+    // The side-table row carries the Reader-specific fields. UPSERT by the
+    // primary key (`article_id`) so a re-sync overwrites location / progress
+    // / category in place — matching the article-row update above. The
+    // `document_id`'s `UNIQUE` constraint keeps the same Reader doc from being
+    // attached to two articles.
+    tx.execute(
+        "INSERT INTO readwise_documents
+            (article_id, document_id, readwise_url, source_url, location,
+             category, reading_progress, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+         ON CONFLICT(article_id) DO UPDATE SET
+            document_id      = excluded.document_id,
+            readwise_url     = excluded.readwise_url,
+            source_url       = excluded.source_url,
+            location         = excluded.location,
+            category         = excluded.category,
+            reading_progress = excluded.reading_progress,
+            updated_at       = excluded.updated_at",
+        params![
+            article_id,
+            extra.document_id,
+            extra.readwise_url,
+            extra.source_url,
+            extra.location,
+            extra.category,
+            extra.reading_progress,
+            updated_at_unix,
+        ],
+    )?;
+
+    tx.commit()?;
+    Ok(is_new)
 }
 
 /// Build and run the article-list query for the given sidebar selection.
@@ -2148,11 +2337,12 @@ mod tests {
     }
 
     #[test]
-    fn opml_export_omits_newsletter_sources() {
+    fn opml_export_omits_newsletter_and_readwise_sources() {
         use crate::ingestion::newsletter::NewsletterConfig;
         let (conn, _) = test_db();
-        // The RSS feed from `test_db` plus a newsletter source whose feed_url
-        // is the synthetic, non-HTTP-fetchable `imap://` form.
+        // The fixture already plants the synthetic Readwise feed (v15
+        // migration) alongside the regular RSS row from `test_db`. Add a
+        // newsletter source whose feed_url is the synthetic `imap://` form too.
         let cfg = NewsletterConfig {
             host: "imap.example.com".into(),
             port: 993,
@@ -2169,14 +2359,285 @@ mod tests {
         .unwrap();
 
         let exported = feeds_for_export(&conn).unwrap();
-        // Only the real RSS feed is exportable — the newsletter is left out so
-        // a re-import never resurrects it as a broken `imap://` RSS feed.
+        // Only the real RSS feed is exportable — both the newsletter and the
+        // Readwise synthetic feed are left out so a re-import never resurrects
+        // them as broken `imap://` / `readwise://` RSS feeds.
         assert_eq!(exported.len(), 1);
         assert_eq!(exported[0].1, "https://example.com/feed.xml");
         assert!(
             !exported.iter().any(|(_, url, _)| url.starts_with("imap://")),
             "no synthetic imap:// url should reach the OPML"
         );
+        assert!(
+            !exported.iter().any(|(_, url, _)| url.starts_with("readwise://")),
+            "no synthetic readwise:// url should reach the OPML"
+        );
+    }
+
+    #[test]
+    fn feeds_to_refresh_omits_newsletter_and_readwise_sources() {
+        use crate::ingestion::newsletter::NewsletterConfig;
+        let (conn, _) = test_db();
+        // Mirror the OPML test: the synthetic Readwise feed is already in
+        // place from the v15 migration; add a newsletter source so both
+        // synthetic kinds are present alongside the normal RSS feed.
+        let cfg = NewsletterConfig {
+            host: "imap.example.com".into(),
+            port: 993,
+            username: "me@example.com".into(),
+            password: "secret".into(),
+            folder: "Newsletters".into(),
+        };
+        insert_newsletter_source(
+            &conn,
+            "imap://me@example.com@imap.example.com:993/Newsletters",
+            "My Newsletter",
+            &cfg,
+        )
+        .unwrap();
+
+        let urls: Vec<String> = feeds_to_refresh(&conn)
+            .unwrap()
+            .into_iter()
+            .map(|(_, url, _, _)| url)
+            .collect();
+        // The HTTP refresh loop only sees the RSS feed — the IMAP-polled
+        // newsletter and the Reader-API-polled Readwise feed are skipped so
+        // the scheduler does not try to GET a non-HTTP URL.
+        assert_eq!(urls, vec!["https://example.com/feed.xml".to_string()]);
+    }
+
+    // ── readwise reader upsert ──────────────────────────────────────────
+
+    /// Build a Reader-shaped `NewArticle` + `NewReaderDocument` pair scoped to
+    /// `doc_id`. Test bodies override individual fields before upserting.
+    fn rw_payload(doc_id: &str) -> (NewArticle, NewReaderDocument) {
+        let article = NewArticle {
+            guid: doc_id.to_string(),
+            url: Some(format!("https://example.com/{doc_id}")),
+            title: "Original title".into(),
+            author: Some("Author 1".into()),
+            summary: Some("first summary".into()),
+            content_html: Some("<p>first body</p>".into()),
+            body_text: "first body".into(),
+            image_url: None,
+            published_at: Some("2025-01-01T00:00:00Z".into()),
+            enclosures: Vec::new(),
+        };
+        let extra = NewReaderDocument {
+            document_id: doc_id.into(),
+            readwise_url: Some(format!("https://read.readwise.io/read/{doc_id}")),
+            source_url: Some(format!("https://example.com/{doc_id}")),
+            location: Some("new".into()),
+            category: Some("article".into()),
+            reading_progress: Some(0.0),
+            updated_at: Some("2025-01-01T00:00:00Z".into()),
+        };
+        (article, extra)
+    }
+
+    #[test]
+    fn readwise_feed_id_resolves_to_v15_synthetic_feed() {
+        let (conn, _) = test_db();
+        // The v15 migration plants exactly one feed at this URL — the lookup
+        // must agree with its source_type so `feeds_to_refresh` will skip it.
+        let id = readwise_feed_id(&conn).expect("synthetic readwise feed exists");
+        let (url, kind): (String, String) = conn
+            .query_row(
+                "SELECT feed_url, source_type FROM feeds WHERE id = ?1",
+                params![id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(url, READWISE_FEED_URL);
+        assert_eq!(kind, "readwise");
+    }
+
+    #[test]
+    fn readwise_upsert_inserts_then_updates_existing_document_fields() {
+        let (conn, _) = test_db();
+        let feed_id = readwise_feed_id(&conn).unwrap();
+
+        // First sync: brand-new document, returns true (counted as new).
+        let (mut a, mut x) = rw_payload("doc-update");
+        assert!(
+            upsert_readwise_document(&conn, feed_id, &a, &x).unwrap(),
+            "first upsert reports the row as new"
+        );
+
+        // Second sync of the SAME document with every field changed. A
+        // `DO NOTHING` upsert would silently freeze the snapshot; this test
+        // is the regression guard requested by the issue ("禁止 DO NOTHING").
+        a.title = "Updated title".into();
+        a.author = Some("Author 2".into());
+        a.summary = Some("revised summary".into());
+        a.content_html = Some("<p>updated body</p>".into());
+        a.body_text = "updated body".into();
+        a.image_url = Some("https://cdn.example.com/img.png".into());
+        a.published_at = Some("2025-02-02T00:00:00Z".into());
+        x.location = Some("archive".into());
+        x.category = Some("email".into());
+        x.reading_progress = Some(0.42);
+        x.readwise_url = Some("https://read.readwise.io/read/doc-update?v=2".into());
+        x.source_url = Some("https://example.com/doc-update?v=2".into());
+        x.updated_at = Some("2025-02-02T00:00:00Z".into());
+
+        assert!(
+            !upsert_readwise_document(&conn, feed_id, &a, &x).unwrap(),
+            "second upsert reports the row as existing, not new"
+        );
+
+        // Only one row exists (no duplicate insert).
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM articles WHERE feed_id = ?1 AND guid = 'doc-update'",
+                params![feed_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+
+        // The article-side fields are overwritten end-to-end.
+        let (title, author, summary, html, body, image, published): (
+            String,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            String,
+            Option<String>,
+            Option<String>,
+        ) = conn
+            .query_row(
+                "SELECT title, author, summary, content_html, body_text, image_url, published_at
+                 FROM articles WHERE feed_id = ?1 AND guid = 'doc-update'",
+                params![feed_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)),
+            )
+            .unwrap();
+        assert_eq!(title, "Updated title");
+        assert_eq!(author.as_deref(), Some("Author 2"));
+        assert_eq!(summary.as_deref(), Some("revised summary"));
+        assert_eq!(html.as_deref(), Some("<p>updated body</p>"));
+        assert_eq!(body, "updated body");
+        assert_eq!(image.as_deref(), Some("https://cdn.example.com/img.png"));
+        assert_eq!(published.as_deref(), Some("2025-02-02T00:00:00Z"));
+
+        // The side-table fields are overwritten too.
+        let (loc, cat, prog, rurl, surl, uat): (
+            Option<String>,
+            Option<String>,
+            Option<f64>,
+            Option<String>,
+            Option<String>,
+            Option<i64>,
+        ) = conn
+            .query_row(
+                "SELECT location, category, reading_progress, readwise_url, source_url, updated_at
+                 FROM readwise_documents WHERE document_id = 'doc-update'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
+            )
+            .unwrap();
+        assert_eq!(loc.as_deref(), Some("archive"));
+        assert_eq!(cat.as_deref(), Some("email"));
+        assert_eq!(prog, Some(0.42));
+        assert_eq!(rurl.as_deref(), Some("https://read.readwise.io/read/doc-update?v=2"));
+        assert_eq!(surl.as_deref(), Some("https://example.com/doc-update?v=2"));
+        // RFC3339 → unix seconds round-trip.
+        let expected_unix =
+            chrono::DateTime::parse_from_rfc3339("2025-02-02T00:00:00Z").unwrap().timestamp();
+        assert_eq!(uat, Some(expected_unix));
+    }
+
+    #[test]
+    fn readwise_upsert_preserves_user_state_across_resyncs() {
+        // `is_read` / `is_starred` / `read_later` are user-owned and must NOT
+        // be reset by a re-sync — otherwise a user who archived a doc in Papr
+        // would see it bounce back to unread on the next Reader poll.
+        let (conn, _) = test_db();
+        let feed_id = readwise_feed_id(&conn).unwrap();
+
+        let (a, x) = rw_payload("doc-user");
+        upsert_readwise_document(&conn, feed_id, &a, &x).unwrap();
+        let id: i64 = conn
+            .query_row(
+                "SELECT id FROM articles WHERE feed_id = ?1 AND guid = 'doc-user'",
+                params![feed_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        conn.execute(
+            "UPDATE articles SET is_read = 1, is_starred = 1, read_later = 1 WHERE id = ?1",
+            params![id],
+        )
+        .unwrap();
+
+        // A re-sync re-runs the upsert; user flags must survive.
+        upsert_readwise_document(&conn, feed_id, &a, &x).unwrap();
+        let (read, starred, later): (bool, bool, bool) = conn
+            .query_row(
+                "SELECT is_read, is_starred, read_later FROM articles WHERE id = ?1",
+                params![id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert!(read && starred && later, "user-side state must persist");
+    }
+
+    #[test]
+    fn readwise_upsert_keeps_fts_in_sync_with_body_updates() {
+        // FTS rows live in a separate virtual table; a body update that only
+        // touched `articles` would leave search results pointing at the stale
+        // text. The upsert mirrors the change into `articles_fts`.
+        let (conn, _) = test_db();
+        register_functions(&conn).unwrap();
+        let feed_id = readwise_feed_id(&conn).unwrap();
+
+        let (mut a, x) = rw_payload("doc-fts");
+        a.title = "Original headline".into();
+        a.body_text = "first body words".into();
+        upsert_readwise_document(&conn, feed_id, &a, &x).unwrap();
+
+        a.title = "Revised headline".into();
+        a.body_text = "second body words".into();
+        upsert_readwise_document(&conn, feed_id, &a, &x).unwrap();
+
+        // Search for the old token: should find nothing.
+        let stale: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM articles_fts WHERE articles_fts MATCH 'first'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(stale, 0, "stale body must not match FTS");
+        let fresh: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM articles_fts WHERE articles_fts MATCH 'second'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(fresh, 1, "updated body must match FTS");
+    }
+
+    #[test]
+    fn readwise_upsert_tolerates_unparseable_updated_at() {
+        // `updated_at` is metadata; a junk value lands as NULL rather than
+        // failing the whole upsert.
+        let (conn, _) = test_db();
+        let feed_id = readwise_feed_id(&conn).unwrap();
+        let (a, mut x) = rw_payload("doc-bad-date");
+        x.updated_at = Some("not-a-date".into());
+        upsert_readwise_document(&conn, feed_id, &a, &x).unwrap();
+        let uat: Option<i64> = conn
+            .query_row(
+                "SELECT updated_at FROM readwise_documents WHERE document_id = 'doc-bad-date'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(uat, None);
     }
 
     #[test]

@@ -223,6 +223,7 @@ pub fn run() {
             commands::freshrss_disconnect,
             commands::freshrss_status,
             commands::freshrss_sync,
+            commands::readwise_reader_sync,
             commands::refresh_tray,
             commands::take_pending_deep_link,
             commands::list_tags,

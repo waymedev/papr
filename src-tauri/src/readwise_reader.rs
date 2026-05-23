@@ -14,13 +14,16 @@
 //! parent-document filter, and `Retry-After` parsing are pure functions and
 //! tested directly.
 //!
-//! Items here are introduced ahead of their callers: step 3 wires up the
-//! upsert, step 4 wires up the Tauri command. Until then the public surface
-//! is exercised by the tests below, so suppress the dead-code lint at the
-//! module boundary rather than scattering `#[allow]` over every item.
+//! Step 3 wires this module into the Tauri command surface
+//! (`readwise_reader_sync`) and the matching DB upsert
+//! (`db::upsert_readwise_document`); the front-end controls land in step 4.
+//! A few items remain ahead of their final callers (the public `read_token`
+//! helper is exercised through the command's settings path, not directly
+//! here), so the dead-code lint is suppressed at the module boundary rather
+//! than scattering `#[allow]` over every item.
 #![allow(dead_code)]
 
-use crate::db::{self, NewArticle};
+use crate::db::{self, NewArticle, NewReaderDocument};
 use crate::error::{AppError, AppResult};
 use crate::sanitize;
 use reqwest::{Client, StatusCode};
@@ -375,6 +378,22 @@ pub fn document_to_article(d: &ReaderDocument) -> NewArticle {
         image_url: d.image_url.clone(),
         published_at,
         enclosures: Vec::new(),
+    }
+}
+
+/// Extract the Reader-specific side-table fields the generic `articles`
+/// schema does not carry: location, category, reading progress, the two
+/// Readwise URLs, and the document's own `updated_at`. The `articles`-shaped
+/// half lives in [`document_to_article`]; pair them at the upsert call site.
+pub fn document_to_extra(d: &ReaderDocument) -> NewReaderDocument {
+    NewReaderDocument {
+        document_id: d.id.clone(),
+        readwise_url: d.url.clone(),
+        source_url: d.source_url.clone(),
+        location: d.location.clone(),
+        category: d.category.clone(),
+        reading_progress: d.reading_progress,
+        updated_at: d.updated_at.clone(),
     }
 }
 
