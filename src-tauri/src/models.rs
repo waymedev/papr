@@ -16,6 +16,10 @@ pub enum SourceType {
     Reddit,
     /// An email newsletter polled from an IMAP mailbox (see ingestion::newsletter).
     Newsletter,
+    /// Documents synced from a Readwise Reader account. The account maps to a
+    /// single synthetic feed row (`readwise://reader/later`); per-document
+    /// metadata lives in the `readwise_documents` side-table.
+    Readwise,
 }
 
 impl SourceType {
@@ -28,6 +32,7 @@ impl SourceType {
             SourceType::Bluesky => "bluesky",
             SourceType::Reddit => "reddit",
             SourceType::Newsletter => "newsletter",
+            SourceType::Readwise => "readwise",
         }
     }
 

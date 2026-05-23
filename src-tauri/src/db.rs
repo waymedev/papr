@@ -242,6 +242,37 @@ static MIGRATIONS: LazyLock<Migrations> = LazyLock::new(|| {
             "ALTER TABLE articles ADD COLUMN translated_html TEXT;
              ALTER TABLE articles ADD COLUMN translated_lang TEXT;",
         ),
+        // v15 — Readwise Reader source (feature CWM-37). A Readwise account
+        // surfaces as a *single* synthetic feed row (one per database) with
+        // `feed_url = 'readwise://reader/later'` and `source_type = 'readwise'`,
+        // mirroring how newsletter sources reuse the `feeds` table for listing
+        // / search / retention. Per-document metadata that the Reader API
+        // exposes — and that does not fit the generic `articles` schema —
+        // lives in the `readwise_documents` side-table, keyed by `article_id`.
+        //
+        // `document_id` is the Reader-side opaque id and is UNIQUE; reusing
+        // FreshRSS's `articles.remote_id` here would collide with the FreshRSS
+        // sync layer's invariants (same column, two different remote vocabs,
+        // no way to disambiguate per-feed), so Readwise gets its own column
+        // in its own table.
+        M::up(
+            r#"
+            INSERT INTO feeds(feed_url, title, source_type)
+            VALUES ('readwise://reader/later', 'Readwise Reader', 'readwise');
+
+            CREATE TABLE readwise_documents (
+                article_id       INTEGER PRIMARY KEY
+                                  REFERENCES articles(id) ON DELETE CASCADE,
+                document_id      TEXT NOT NULL UNIQUE,
+                readwise_url     TEXT,
+                source_url       TEXT,
+                location         TEXT,
+                category         TEXT,
+                reading_progress REAL,
+                updated_at       INTEGER
+            );
+            "#,
+        ),
     ])
 });
 

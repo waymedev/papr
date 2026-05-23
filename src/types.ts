@@ -7,7 +7,8 @@ export type SourceType =
   | "mastodon"
   | "bluesky"
   | "reddit"
-  | "newsletter";
+  | "newsletter"
+  | "readwise";
 
 /** A configured email-newsletter source (mirrors commands::NewsletterSource). */
 export interface NewsletterSource {
