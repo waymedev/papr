@@ -6,6 +6,7 @@ use crate::error::AppResult;
 use crate::ingestion::newsletter;
 use crate::ingestion::{fetch, parse};
 use crate::models::RefreshProgress;
+use crate::readwise_reader;
 use crate::state::AppState;
 use crate::{notify, sync, tray};
 use std::sync::Arc;
@@ -221,6 +222,13 @@ pub async fn refresh_all(
     // new messages as articles, alongside the RSS refresh above.
     total_new += poll_newsletters(app, dedup, &rules).await;
 
+    // Readwise Reader: pull the user's Reader documents into the synthetic
+    // `readwise://reader/later` feed. `feeds_to_refresh` skips this feed
+    // (Reader has its own paginated/throttled HTTP path, not a feed-document
+    // fetch), so Refresh All would otherwise leave Reader stale until the
+    // user manually clicked Sync Now in Settings.
+    total_new += poll_readwise_reader(app).await;
+
     // Retention: drop old read articles when a finite window is configured.
     // The DELETE scans the whole table, so throttle it to once per day rather
     // than running on every refresh cycle.
@@ -355,6 +363,87 @@ async fn poll_newsletters(
         }
     }
     total_new
+}
+
+/// Pull every parent document from the user's Readwise Reader account into
+/// the synthetic `readwise://reader/later` feed, mirroring what the manual
+/// `readwise_reader_sync` command does — minus the per-call `feeds-updated`
+/// emit, which `refresh_all` already fires once for the whole batch.
+///
+/// Skips silently (returns 0) when no Readwise token is configured: a user
+/// who has never set up Reader should not see an error toast every time
+/// Refresh All runs. A genuine sync failure is recorded as the Readwise
+/// feed's `fetch_error`, matching how the RSS and newsletter paths surface
+/// per-feed errors in the sidebar.
+async fn poll_readwise_reader(app: &AppHandle) -> usize {
+    let state = app.state::<AppState>();
+
+    // Settings + token read in one short critical section so we don't keep
+    // the DB lock across the (slow, throttled) HTTP pull below.
+    let (token, opts, feed_id) = {
+        let conn = state.db.lock().await;
+        let token = match readwise_reader::read_token(&conn) {
+            Ok(Some(t)) => t,
+            Ok(None) => return 0,
+            Err(e) => {
+                log::warn!("readwise reader: token read failed: {e}");
+                return 0;
+            }
+        };
+        // The Settings panel stores the user's last-used Reader options here.
+        // Missing / empty values mean "no filter" / "html off", matching the
+        // defaults the UI shows on first open.
+        let category = db::get_setting(&conn, "readwise_reader_category")
+            .ok()
+            .flatten()
+            .and_then(|s| {
+                let t = s.trim().to_string();
+                if t.is_empty() { None } else { Some(t) }
+            });
+        let with_html = db::setting_flag(&conn, "readwise_reader_with_html", false);
+        let opts = readwise_reader::FetchOptions {
+            category,
+            with_html_content: with_html,
+            ..Default::default()
+        };
+        let feed_id = match db::readwise_feed_id(&conn) {
+            Ok(id) => id,
+            Err(e) => {
+                // The v15 migration inserts this row unconditionally, so a
+                // missing feed indicates a corrupt DB — log and bow out.
+                log::warn!("readwise reader: synthetic feed missing: {e}");
+                return 0;
+            }
+        };
+        (token, opts, feed_id)
+    };
+
+    let http = state.http();
+    let docs = match readwise_reader::fetch_documents(&http, &token, &opts).await {
+        Ok(d) => d,
+        Err(e) => {
+            log::warn!("readwise reader pull failed: {e}");
+            let conn = state.db.lock().await;
+            let _ = db::set_feed_error(&conn, feed_id, &e.to_string());
+            return 0;
+        }
+    };
+
+    let mut new_count = 0usize;
+    {
+        let conn = state.db.lock().await;
+        for d in &docs {
+            let a = readwise_reader::document_to_article(d);
+            let x = readwise_reader::document_to_extra(d);
+            match db::upsert_readwise_document(&conn, feed_id, &a, &x) {
+                Ok(true) => new_count += 1,
+                Ok(false) => {}
+                Err(e) => log::warn!("readwise upsert failed: {e}"),
+            }
+        }
+        let _ = db::touch_feed(&conn, feed_id);
+    }
+    new_count
 }
 
 /// Read the refresh interval (minutes) from settings, defaulting to 30.
