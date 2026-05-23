@@ -2498,7 +2498,7 @@ mod tests {
         assert_eq!(count, 1);
 
         // The article-side fields are overwritten end-to-end.
-        let (title, author, summary, html, body, image, published): (
+        type ArticleFields = (
             String,
             Option<String>,
             Option<String>,
@@ -2506,7 +2506,8 @@ mod tests {
             String,
             Option<String>,
             Option<String>,
-        ) = conn
+        );
+        let (title, author, summary, html, body, image, published): ArticleFields = conn
             .query_row(
                 "SELECT title, author, summary, content_html, body_text, image_url, published_at
                  FROM articles WHERE feed_id = ?1 AND guid = 'doc-update'",
@@ -2523,14 +2524,15 @@ mod tests {
         assert_eq!(published.as_deref(), Some("2025-02-02T00:00:00Z"));
 
         // The side-table fields are overwritten too.
-        let (loc, cat, prog, rurl, surl, uat): (
+        type ReadwiseFields = (
             Option<String>,
             Option<String>,
             Option<f64>,
             Option<String>,
             Option<String>,
             Option<i64>,
-        ) = conn
+        );
+        let (loc, cat, prog, rurl, surl, uat): ReadwiseFields = conn
             .query_row(
                 "SELECT location, category, reading_progress, readwise_url, source_url, updated_at
                  FROM readwise_documents WHERE document_id = 'doc-update'",

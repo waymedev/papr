@@ -358,6 +358,7 @@
         "syncNow": "Sync now",
         "syncing": "Syncing…",
         "syncDone": "Readwise sync complete · {{count}} new",
+        "syncFailed": "Readwise sync failed: {{reason}}",
         "location": {
           "new": "New",
           "later": "Later",
@@ -551,7 +552,8 @@
     "noInstapaperConfig": "Add your Instapaper username and password in Settings → Integrations",
     "noKindleConfig": "Configure your Kindle address and SMTP server in Settings → Integrations",
     "noReadwiseToken": "Add your Readwise API token in Settings → Integrations",
-    "readwiseRateLimited": "Readwise rate-limited the request — try again in a minute"
+    "noReadwiseFeed": "The Readwise Reader feed is missing — restart Papr to run the database migration",
+    "readwiseRateLimited": "Readwise returned 429 after the Retry-After backoff window — try again later"
   },
   "highlights": {
     "toolbarLabel": "Highlight color",

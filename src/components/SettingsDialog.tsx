@@ -10,7 +10,8 @@ import { useFocusTrap } from "../hooks/useFocusTrap";
 import { LANGUAGES, setLanguage, type Language } from "../i18n";
 import { feedHost } from "../lib/feedMeta";
 import { modKey, modCombo } from "../lib/platform";
-import { reportError } from "../toast";
+import { errorText } from "../lib/errors";
+import { reportError, toast } from "../toast";
 import { checkForUpdates } from "../lib/updater";
 import { downloadFile } from "../lib/download";
 import type { Feed, Rule, RuleAction, RuleField, RulePreview } from "../types";
@@ -1125,7 +1126,7 @@ function ReadwiseReaderGroup({ onToast }: { onToast: (m: string) => void }) {
       actions.refreshAfterBulk();
       onToast(t("settings.sync.readwise.syncDone", { count: n }));
     } catch (e) {
-      reportError(e);
+      toast.error(t("settings.sync.readwise.syncFailed", { reason: errorText(e) }));
     } finally {
       setBusy(false);
     }

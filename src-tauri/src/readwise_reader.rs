@@ -306,17 +306,17 @@ pub async fn fetch_documents(
 /// - `url`          = `source_url ?? url` (canonical web URL; falls back to
 ///   the Reader-internal URL only when the original wasn't captured)
 /// - `title`        = `title`, with a `(no title)` fallback so the article
-///                    list never renders a blank row
+///   list never renders a blank row
 /// - `author`       = `author`
 /// - `summary`      = `summary`
 /// - `image_url`    = `image_url`
 /// - `content_html` = sanitized `html_content` (when present)
 /// - `body_text`    = plain-text rendering of `html_content` for FTS /
-///                    snippets / AI context
+///   snippets / AI context
 /// - `published_at` = `published_date ?? created_at` (RFC3339 from the API).
-///                    `created_at` is the fallback so the article still
-///                    has a chronological anchor for the article list when
-///                    Reader couldn't extract an original publish date.
+///   `created_at` is the fallback so the article still has a chronological
+///   anchor for the article list when Reader couldn't extract an original
+///   publish date.
 /// - `enclosures`   = empty (Reader docs are HTML, not podcast media)
 pub fn document_to_article(d: &ReaderDocument) -> NewArticle {
     let title = d

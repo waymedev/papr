@@ -347,7 +347,26 @@
       "reasonEntitlements": "需要原生 macOS entitlements，暂不支持",
       "connected": "已连接 FreshRSS",
       "disconnected": "已断开 FreshRSS",
-      "syncDone": "同步完成 · 已对齐 {{count}} 篇文章状态"
+      "syncDone": "同步完成 · 已对齐 {{count}} 篇文章状态",
+      "readwise": {
+        "title": "Readwise Reader",
+        "hint": "从 Readwise Reader 拉取已保存文档，并作为只读订阅源加入 Papr。使用与标注同步共用的 API token。",
+        "locationLabel": "位置",
+        "locationDesc": "每次同步要拉取的 Reader 文档分区。",
+        "withHtmlLabel": "包含全文内容",
+        "withHtmlDesc": "同步时请求文档正文。数据量更大，但文章可离线完整阅读。",
+        "syncNow": "立即同步",
+        "syncing": "同步中…",
+        "syncDone": "Readwise 同步完成 · 新增 {{count}} 篇",
+        "syncFailed": "Readwise 同步失败：{{reason}}",
+        "location": {
+          "new": "新建",
+          "later": "稍后读",
+          "shortlist": "精选列表",
+          "archive": "归档",
+          "feed": "Feed"
+        }
+      }
     },
     "shortcuts": {
       "navigation": "导航",
@@ -531,7 +550,10 @@
     "noNotionPage": "请在 设置 → 集成 中设置目标 Notion 页面 ID",
     "noPocketConfig": "请在 设置 → 集成 中添加 Pocket consumer key 和访问令牌",
     "noInstapaperConfig": "请在 设置 → 集成 中添加 Instapaper 用户名和密码",
-    "noKindleConfig": "请在 设置 → 集成 中配置 Kindle 地址和 SMTP 服务器"
+    "noKindleConfig": "请在 设置 → 集成 中配置 Kindle 地址和 SMTP 服务器",
+    "noReadwiseToken": "请在 设置 → 集成 中添加 Readwise API token",
+    "noReadwiseFeed": "缺少 Readwise Reader 订阅源，请重启 Papr 以执行数据库迁移",
+    "readwiseRateLimited": "Readwise 在 Retry-After 退避窗口后仍返回 429，请稍后再试"
   },
   "highlights": {
     "toolbarLabel": "高亮颜色",
