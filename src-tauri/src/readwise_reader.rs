@@ -313,10 +313,16 @@ pub async fn fetch_documents(
 /// - `content_html` = sanitized `html_content` (when present)
 /// - `body_text`    = plain-text rendering of `html_content` for FTS /
 ///   snippets / AI context
-/// - `published_at` = `published_date ?? created_at` (RFC3339 from the API).
-///   `created_at` is the fallback so the article still has a chronological
-///   anchor for the article list when Reader couldn't extract an original
-///   publish date.
+/// - `published_at` = `created_at ?? published_date` (RFC3339 from the API).
+///   For Reader docs the article list sorts by **added-to-Reader** time, not
+///   the upstream publish date — that's the order users see on
+///   read.readwise.io, and it keeps a freshly-saved doc at the top even when
+///   its underlying article is years old. The Reader API has no server-side
+///   sort knob on `/api/v3/list/`, so the ordering is established here by
+///   feeding `created_at` (the Reader-side added timestamp) into the same
+///   `published_at` column the global article list already sorts on. The
+///   upstream `published_date` is kept as a fallback so a doc without a
+///   `created_at` still has a chronological anchor.
 /// - `enclosures`   = empty (Reader docs are HTML, not podcast media)
 pub fn document_to_article(d: &ReaderDocument) -> NewArticle {
     let title = d
@@ -354,13 +360,13 @@ pub fn document_to_article(d: &ReaderDocument) -> NewArticle {
         .unwrap_or_default();
 
     let published_at = d
-        .published_date
+        .created_at
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_string)
         .or_else(|| {
-            d.created_at
+            d.published_date
                 .as_deref()
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
@@ -443,7 +449,11 @@ mod tests {
         doc.author = Some("Jane".into());
         doc.summary = Some("a summary".into());
         doc.image_url = Some("https://cdn.example.com/img.png".into());
-        doc.published_date = Some("2025-04-01T10:00:00Z".into());
+        // Both timestamps present: `created_at` (added-to-Reader) wins so
+        // the article list sorts by when the user saved the doc, not by
+        // the upstream publish date.
+        doc.created_at = Some("2025-04-01T10:00:00Z".into());
+        doc.published_date = Some("2020-01-01T00:00:00Z".into());
 
         let a = document_to_article(&doc);
         assert_eq!(a.guid, "doc-42");
@@ -459,17 +469,47 @@ mod tests {
     }
 
     #[test]
-    fn mapping_falls_back_to_created_at_when_published_date_missing() {
-        // Reader can't always extract an original publish date — without a
-        // fallback the article list would lose its sort anchor for those
-        // docs. `created_at` is the next-best chronological marker.
+    fn mapping_falls_back_to_published_date_when_created_at_missing() {
+        // Reader docs always carry a `created_at` (added-to-Reader time) in
+        // practice, but the field is optional in our decoder — without a
+        // fallback such a row would lose its sort anchor entirely.
+        // `published_date` is the next-best chronological marker.
         let mut doc: ReaderDocument =
             serde_json::from_value(doc_json("doc-x", None)).unwrap();
         doc.title = Some("t".into());
-        doc.published_date = None;
-        doc.created_at = Some("2024-09-01T00:00:00Z".into());
+        doc.created_at = None;
+        doc.published_date = Some("2024-09-01T00:00:00Z".into());
         let a = document_to_article(&doc);
         assert_eq!(a.published_at.as_deref(), Some("2024-09-01T00:00:00Z"));
+    }
+
+    #[test]
+    fn mapping_prefers_created_at_over_published_date_for_sort_order() {
+        // The article list sorts Reader docs by added-to-Reader time so a
+        // freshly-saved old article surfaces at the top, matching how
+        // read.readwise.io itself orders the list.
+        let mut a_doc: ReaderDocument =
+            serde_json::from_value(doc_json("doc-a", None)).unwrap();
+        a_doc.title = Some("recently saved old article".into());
+        a_doc.created_at = Some("2026-05-01T00:00:00Z".into());
+        a_doc.published_date = Some("2018-01-01T00:00:00Z".into());
+
+        let mut b_doc: ReaderDocument =
+            serde_json::from_value(doc_json("doc-b", None)).unwrap();
+        b_doc.title = Some("just-published, saved a while ago".into());
+        b_doc.created_at = Some("2025-01-01T00:00:00Z".into());
+        b_doc.published_date = Some("2026-05-22T00:00:00Z".into());
+
+        let a = document_to_article(&a_doc);
+        let b = document_to_article(&b_doc);
+        // `a` was added later → its `published_at` (mapped from
+        // `created_at`) is the larger timestamp, so the global article list
+        // — which sorts by `datetime(COALESCE(published_at, fetched_at)) DESC`
+        // — will surface it first.
+        assert!(
+            a.published_at.as_deref() > b.published_at.as_deref(),
+            "added-later doc must sort newer than added-earlier doc"
+        );
     }
 
     #[test]
