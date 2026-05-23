@@ -833,6 +833,168 @@ pub async fn refresh_tray(app: AppHandle) -> AppResult<()> {
     Ok(())
 }
 
+// ─────────────────────────── Readwise Reader ───────────────────────────
+
+/// Whether a Readwise API token is currently stored. Reported through
+/// `readwise_get_token_status` so the Settings panel can show "Set ✓" /
+/// "Not set" without ever pulling the token itself across the IPC boundary.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadwiseTokenStatus {
+    pub has_token: bool,
+}
+
+/// Pin a new Readwise API token. Stored under the `readwise_token` settings
+/// key shared with the highlights integration; trims surrounding whitespace
+/// so a copy-paste with a stray newline still saves correctly. Empty input
+/// is rejected so the UI's "Clear" button is the only path to a tombstoned
+/// value — saving "" silently would look like a successful save but disable
+/// every Readwise sync.
+#[tauri::command]
+pub async fn readwise_set_token(state: State<'_, AppState>, token: String) -> AppResult<()> {
+    let trimmed = token.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::code("emptyReadwiseToken"));
+    }
+    let conn = state.db.lock().await;
+    db::set_setting(&conn, crate::readwise_reader::TOKEN_SETTING, trimmed)
+}
+
+/// Check whether a Readwise token is currently configured. Never returns
+/// the token itself — only a presence flag — so the renderer cannot accidentally
+/// log or display the plaintext value.
+#[tauri::command]
+pub async fn readwise_get_token_status(
+    state: State<'_, AppState>,
+) -> AppResult<ReadwiseTokenStatus> {
+    let conn = state.read().await;
+    let has_token = crate::readwise_reader::read_token(&conn)?.is_some();
+    Ok(ReadwiseTokenStatus { has_token })
+}
+
+/// Tombstone the stored token by writing an empty string. `read_token`
+/// already treats `""` as "no token", so existing sync paths fall back to
+/// the `noReadwiseToken` error without further changes.
+#[tauri::command]
+pub async fn readwise_clear_token(state: State<'_, AppState>) -> AppResult<()> {
+    let conn = state.db.lock().await;
+    db::set_setting(&conn, crate::readwise_reader::TOKEN_SETTING, "")
+}
+
+/// Verify the stored token by issuing a single 1-row Reader list request.
+/// Maps 401/403 to a localisable `readwiseTokenInvalid` code so the UI can
+/// render a translated message instead of dumping the raw HTTP error. Any
+/// other transport failure surfaces as the normal `network` error.
+#[tauri::command]
+pub async fn readwise_test_token(state: State<'_, AppState>) -> AppResult<()> {
+    use crate::readwise_reader;
+
+    let token = {
+        let conn = state.read().await;
+        readwise_reader::read_token(&conn)?
+            .ok_or_else(|| AppError::code("noReadwiseToken"))?
+    };
+
+    // A single-page, no-html, `later` probe is the cheapest call that still
+    // exercises auth. We discard the result; we only care that the request
+    // didn't 401/403.
+    let opts = readwise_reader::FetchOptions {
+        location: Some("later".to_string()),
+        ..Default::default()
+    };
+    let http = state.http();
+    match readwise_reader::fetch_documents(&http, &token, &opts).await {
+        Ok(_) => Ok(()),
+        Err(AppError::Http(e)) => {
+            if matches!(
+                e.status(),
+                Some(reqwest::StatusCode::UNAUTHORIZED) | Some(reqwest::StatusCode::FORBIDDEN)
+            ) {
+                Err(AppError::code("readwiseTokenInvalid"))
+            } else {
+                Err(AppError::Http(e))
+            }
+        }
+        Err(other) => Err(other),
+    }
+}
+
+/// Pull the user's Readwise Reader document list and upsert each parent doc
+/// into the synthetic Readwise feed. Returns the number of *new* documents
+/// added on this run (existing docs are still updated in place — see
+/// `db::upsert_readwise_document` — but only the genuinely-new tally is what
+/// the "N new" toast wants to display, matching how the RSS scheduler counts).
+///
+/// `location` filters which Reader location to pull (`new` / `later` /
+/// `shortlist` / `archive` / `feed`); `with_html` toggles the costly
+/// `withHtmlContent=true` request flag. Both are decided by the UI; the
+/// command itself stays oblivious so future settings (e.g. a saved default
+/// location) plumb through without touching the IPC surface.
+///
+/// The HTTP fetch and the DB write are intentionally split so the writer lock
+/// is never held across the (slow, 20-req/min throttled) network pull —
+/// otherwise a multi-page sync would block every UI read for the duration of
+/// the pull, which under WAL is the whole point of separating writer / reader
+/// connections.
+#[tauri::command]
+pub async fn readwise_reader_sync(
+    app: AppHandle,
+    location: Option<String>,
+    with_html: bool,
+) -> AppResult<usize> {
+    use crate::readwise_reader;
+
+    let state = app.state::<AppState>();
+
+    // 1. Read the token (settings-table). Empty / missing tokens short-
+    //    circuit with the same code the highlights integration uses, so the
+    //    i18n layer renders a single "no token" message.
+    let token = {
+        let conn = state.read().await;
+        readwise_reader::read_token(&conn)?
+            .ok_or_else(|| AppError::code("noReadwiseToken"))?
+    };
+
+    // 2. Pull every parent document matching the location filter. The client
+    //    handles cursor pagination, 20-req/min throttling and 429 backoff.
+    let opts = readwise_reader::FetchOptions {
+        location,
+        with_html_content: with_html,
+        ..Default::default()
+    };
+    let http = state.http();
+    let docs = readwise_reader::fetch_documents(&http, &token, &opts).await?;
+
+    // 3. Upsert each document under the synthetic Readwise feed. Run all of
+    //    them under one writer lock — they're small writes against a single
+    //    feed and a transaction-per-doc avoids holding the writer for the
+    //    whole HTTP pull above.
+    let new_count = {
+        let conn = state.db.lock().await;
+        let feed_id = db::readwise_feed_id(&conn)?;
+        let mut new = 0usize;
+        for d in &docs {
+            let a = readwise_reader::document_to_article(d);
+            let x = readwise_reader::document_to_extra(d);
+            if db::upsert_readwise_document(&conn, feed_id, &a, &x)? {
+                new += 1;
+            }
+        }
+        new
+    };
+
+    // 4. The DB has changed — tell the UI to re-render and re-poll its smart
+    //    counts. `feeds-updated` is the same event the RSS scheduler emits;
+    //    the frontend already listens for it, so Reader docs show up
+    //    immediately without a sidebar-specific signal. The unread-surfaces
+    //    refresh (Dock badge / tray) covers a sync that lands brand-new
+    //    unread documents.
+    let _ = app.emit("feeds-updated", new_count as u64);
+    refresh_unread_surfaces(&app).await;
+
+    Ok(new_count)
+}
+
 /// Drain a `papr://subscribe` URL that was delivered before the webview could
 /// receive the `deep-link-subscribe` event (a cold-start launch). The frontend
 /// calls this once on mount; returns `None` when there is nothing pending.

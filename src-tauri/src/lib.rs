@@ -11,6 +11,7 @@ mod ingestion;
 mod models;
 mod notify;
 mod opml;
+mod readwise_reader;
 mod sanitize;
 mod state;
 mod sync;
@@ -222,6 +223,11 @@ pub fn run() {
             commands::freshrss_disconnect,
             commands::freshrss_status,
             commands::freshrss_sync,
+            commands::readwise_reader_sync,
+            commands::readwise_set_token,
+            commands::readwise_get_token_status,
+            commands::readwise_clear_token,
+            commands::readwise_test_token,
             commands::refresh_tray,
             commands::take_pending_deep_link,
             commands::list_tags,

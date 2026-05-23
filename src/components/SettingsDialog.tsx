@@ -10,10 +10,20 @@ import { useFocusTrap } from "../hooks/useFocusTrap";
 import { LANGUAGES, setLanguage, type Language } from "../i18n";
 import { feedHost } from "../lib/feedMeta";
 import { modKey, modCombo } from "../lib/platform";
-import { reportError } from "../toast";
+import { errorText } from "../lib/errors";
+import { reportError, toast } from "../toast";
 import { checkForUpdates } from "../lib/updater";
 import { downloadFile } from "../lib/download";
 import type { Feed, Rule, RuleAction, RuleField, RulePreview } from "../types";
+import type { ReadwiseLocation } from "../api";
+import {
+  DEFAULT_READWISE_LOCATION,
+  READWISE_LOCATIONS,
+  READWISE_LOCATION_SETTING,
+  READWISE_WITH_HTML_SETTING,
+  parseReadwiseLocation,
+  readwiseLocationLabelKey,
+} from "../lib/readwise";
 import Icon, { type IconName } from "./Icon";
 import ConfirmDialog from "./ConfirmDialog";
 import FeedAvatar from "./FeedAvatar";
@@ -1049,6 +1059,8 @@ function SyncSection({ onToast }: { onToast: (m: string) => void }) {
         )}
       </div>
 
+      <ReadwiseReaderGroup onToast={onToast} />
+
       <div className="settings-group">
         <h3 className="settings-group-title">{t("settings.sync.otherServices")}</h3>
         {unavailable.map((s) => (
@@ -1065,6 +1077,212 @@ function SyncSection({ onToast }: { onToast: (m: string) => void }) {
         ))}
       </div>
     </>
+  );
+}
+
+/* ── Readwise Reader pull (one-way sync) ─────────────────── */
+// One-way pull from Readwise Reader's document list into a synthetic feed.
+// The token input on this panel writes to the `readwise_token` settings key
+// (shared with the existing highlights integration). The plaintext token
+// never round-trips back through IPC — `readwise_get_token_status` only
+// returns a presence flag, so the renderer never holds the saved value.
+function ReadwiseReaderGroup({ onToast }: { onToast: (m: string) => void }) {
+  const { t } = useTranslation();
+  const actions = useArticleActions();
+  const [location, setLocation] = useState<ReadwiseLocation>(
+    DEFAULT_READWISE_LOCATION,
+  );
+  const [withHtml, setWithHtml] = useState(false);
+  const [busy, setBusy] = useState(false);
+  // Local-only buffer for the token input. We never hydrate it from the
+  // saved value (the backend refuses to leak the plaintext), so the field
+  // shows "set ✓" / "not set" status separately and only carries data while
+  // the user is typing a new token.
+  const [tokenInput, setTokenInput] = useState("");
+  const [hasToken, setHasToken] = useState<boolean | null>(null);
+  const [tokenBusy, setTokenBusy] = useState(false);
+
+  useEffect(() => {
+    api
+      .getSetting(READWISE_LOCATION_SETTING)
+      .then((v) => setLocation(parseReadwiseLocation(v)))
+      .catch(() => {});
+    api
+      .getSetting(READWISE_WITH_HTML_SETTING)
+      .then((v) => {
+        if (v != null && v !== "") setWithHtml(v === "1");
+      })
+      .catch(() => {});
+    api
+      .readwiseGetTokenStatus()
+      .then((s) => setHasToken(s.hasToken))
+      .catch(() => setHasToken(false));
+  }, []);
+
+  const changeLocation = (v: ReadwiseLocation) => {
+    setLocation(v);
+    api.setSetting(READWISE_LOCATION_SETTING, v).catch(() => {});
+  };
+  const changeWithHtml = (v: boolean) => {
+    setWithHtml(v);
+    api.setSetting(READWISE_WITH_HTML_SETTING, v ? "1" : "0").catch(() => {});
+  };
+
+  const saveToken = async () => {
+    const trimmed = tokenInput.trim();
+    if (!trimmed) return;
+    setTokenBusy(true);
+    try {
+      await api.readwiseSetToken(trimmed);
+      // Clear the input immediately so the plaintext doesn't linger in the
+      // DOM after the user navigates away. The status flag is the only
+      // signal we keep on screen.
+      setTokenInput("");
+      setHasToken(true);
+      onToast(t("settings.sync.readwise.tokenSaved"));
+    } catch (e) {
+      toast.error(errorText(e));
+    } finally {
+      setTokenBusy(false);
+    }
+  };
+
+  const clearToken = async () => {
+    setTokenBusy(true);
+    try {
+      await api.readwiseClearToken();
+      setTokenInput("");
+      setHasToken(false);
+      onToast(t("settings.sync.readwise.tokenCleared"));
+    } catch (e) {
+      toast.error(errorText(e));
+    } finally {
+      setTokenBusy(false);
+    }
+  };
+
+  const testToken = async () => {
+    setTokenBusy(true);
+    try {
+      await api.readwiseTestToken();
+      onToast(t("settings.sync.readwise.tokenTestSuccess"));
+    } catch (e) {
+      toast.error(
+        t("settings.sync.readwise.tokenTestFailed", { reason: errorText(e) }),
+      );
+    } finally {
+      setTokenBusy(false);
+    }
+  };
+
+  const syncNow = async () => {
+    setBusy(true);
+    try {
+      const n = await api.readwiseReaderSync(location, withHtml);
+      // The backend just emitted feeds-updated; this refreshes the same
+      // article-bearing caches FreshRSS sync touches so newly-pulled
+      // Reader documents appear in the sidebar / article list immediately.
+      actions.refreshAfterBulk();
+      onToast(t("settings.sync.readwise.syncDone", { count: n }));
+    } catch (e) {
+      toast.error(t("settings.sync.readwise.syncFailed", { reason: errorText(e) }));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const locationOptions = READWISE_LOCATIONS.map((l) => ({
+    value: l,
+    label: t(readwiseLocationLabelKey(l)),
+  }));
+
+  const tokenStatusLabel =
+    hasToken === null
+      ? ""
+      : hasToken
+        ? t("settings.sync.readwise.tokenStatusSet")
+        : t("settings.sync.readwise.tokenStatusUnset");
+
+  return (
+    <div className="settings-group">
+      <h3 className="settings-group-title">
+        {t("settings.sync.readwise.title")}
+      </h3>
+      <p className="modal-hint" style={{ marginBottom: 14 }}>
+        {t("settings.sync.readwise.hint")}
+      </p>
+      <Row
+        label={t("settings.sync.readwise.tokenLabel")}
+        desc={t("settings.sync.readwise.tokenDesc")}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+          <input
+            className="s-text-input"
+            type="password"
+            value={tokenInput}
+            placeholder={t("settings.sync.readwise.tokenPlaceholder")}
+            autoComplete="off"
+            spellCheck={false}
+            onChange={(e) => setTokenInput(e.target.value)}
+          />
+          <span
+            style={{
+              fontSize: 12,
+              color: hasToken ? "var(--accent, #2c8a3e)" : "var(--muted)",
+            }}
+          >
+            {tokenStatusLabel}
+          </span>
+        </div>
+      </Row>
+      <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+        <button
+          className="s-btn primary"
+          onClick={saveToken}
+          disabled={tokenBusy || !tokenInput.trim()}
+        >
+          {t("settings.sync.readwise.tokenSave")}
+        </button>
+        <button
+          className="s-btn"
+          onClick={testToken}
+          disabled={tokenBusy || !hasToken}
+        >
+          {t("settings.sync.readwise.tokenTest")}
+        </button>
+        <button
+          className="s-btn"
+          onClick={clearToken}
+          disabled={tokenBusy || !hasToken}
+        >
+          {t("settings.sync.readwise.tokenClear")}
+        </button>
+      </div>
+      <Row
+        label={t("settings.sync.readwise.locationLabel")}
+        desc={t("settings.sync.readwise.locationDesc")}
+      >
+        <Select<ReadwiseLocation>
+          value={location}
+          options={locationOptions}
+          onChange={changeLocation}
+        />
+      </Row>
+      <Row
+        label={t("settings.sync.readwise.withHtmlLabel")}
+        desc={t("settings.sync.readwise.withHtmlDesc")}
+      >
+        <Toggle checked={withHtml} onChange={changeWithHtml} />
+      </Row>
+      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        <button className="s-btn primary" onClick={syncNow} disabled={busy}>
+          <Icon name="refresh" size={12} />{" "}
+          {busy
+            ? t("settings.sync.readwise.syncing")
+            : t("settings.sync.readwise.syncNow")}
+        </button>
+      </div>
+    </div>
   );
 }
 

@@ -170,6 +170,43 @@ export const freshrssConnect = (
 export const freshrssDisconnect = () => invoke<void>("freshrss_disconnect");
 export const freshrssSync = () => invoke<number>("freshrss_sync");
 
+// ── Readwise Reader sync ──
+/** A Reader location filter — mirrors the values the Reader API accepts on
+ *  `GET /api/v3/list/?location=`. The matching server-side command passes the
+ *  string through unchanged, so adding a value here is a UI-only change. */
+export type ReadwiseLocation =
+  | "new"
+  | "later"
+  | "shortlist"
+  | "archive"
+  | "feed";
+
+/** Pull the user's Readwise Reader document list and upsert each parent
+ *  document into the synthetic Readwise feed. Resolves with the number of
+ *  *new* documents added on this run. `location` filters which Reader bucket
+ *  to pull; `withHtml` toggles the costly `withHtmlContent=true` request
+ *  flag (the API only returns html_content when explicitly asked). */
+export const readwiseReaderSync = (
+  location: ReadwiseLocation | null,
+  withHtml: boolean,
+) => invoke<number>("readwise_reader_sync", { location, withHtml });
+
+/** Whether a Readwise API token is currently stored. The backend never
+ *  returns the token itself — only a presence flag — so the renderer cannot
+ *  accidentally surface or log the plaintext. */
+export interface ReadwiseTokenStatus {
+  hasToken: boolean;
+}
+export const readwiseGetTokenStatus = () =>
+  invoke<ReadwiseTokenStatus>("readwise_get_token_status");
+export const readwiseSetToken = (token: string) =>
+  invoke<void>("readwise_set_token", { token });
+export const readwiseClearToken = () => invoke<void>("readwise_clear_token");
+/** Verify the stored token with a single 1-row Reader list request. Resolves
+ *  on success; rejects with `readwiseTokenInvalid` (401/403) or the underlying
+ *  network error otherwise. */
+export const readwiseTestToken = () => invoke<void>("readwise_test_token");
+
 // ── tray ──
 export const refreshTray = () => invoke<void>("refresh_tray");
 
