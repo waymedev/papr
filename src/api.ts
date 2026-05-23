@@ -170,6 +170,27 @@ export const freshrssConnect = (
 export const freshrssDisconnect = () => invoke<void>("freshrss_disconnect");
 export const freshrssSync = () => invoke<number>("freshrss_sync");
 
+// ── Readwise Reader sync ──
+/** A Reader location filter — mirrors the values the Reader API accepts on
+ *  `GET /api/v3/list/?location=`. The matching server-side command passes the
+ *  string through unchanged, so adding a value here is a UI-only change. */
+export type ReadwiseLocation =
+  | "new"
+  | "later"
+  | "shortlist"
+  | "archive"
+  | "feed";
+
+/** Pull the user's Readwise Reader document list and upsert each parent
+ *  document into the synthetic Readwise feed. Resolves with the number of
+ *  *new* documents added on this run. `location` filters which Reader bucket
+ *  to pull; `withHtml` toggles the costly `withHtmlContent=true` request
+ *  flag (the API only returns html_content when explicitly asked). */
+export const readwiseReaderSync = (
+  location: ReadwiseLocation | null,
+  withHtml: boolean,
+) => invoke<number>("readwise_reader_sync", { location, withHtml });
+
 // ── tray ──
 export const refreshTray = () => invoke<void>("refresh_tray");
 

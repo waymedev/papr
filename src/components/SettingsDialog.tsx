@@ -14,6 +14,15 @@ import { reportError } from "../toast";
 import { checkForUpdates } from "../lib/updater";
 import { downloadFile } from "../lib/download";
 import type { Feed, Rule, RuleAction, RuleField, RulePreview } from "../types";
+import type { ReadwiseLocation } from "../api";
+import {
+  DEFAULT_READWISE_LOCATION,
+  READWISE_LOCATIONS,
+  READWISE_LOCATION_SETTING,
+  READWISE_WITH_HTML_SETTING,
+  parseReadwiseLocation,
+  readwiseLocationLabelKey,
+} from "../lib/readwise";
 import Icon, { type IconName } from "./Icon";
 import ConfirmDialog from "./ConfirmDialog";
 import FeedAvatar from "./FeedAvatar";
@@ -1049,6 +1058,8 @@ function SyncSection({ onToast }: { onToast: (m: string) => void }) {
         )}
       </div>
 
+      <ReadwiseReaderGroup onToast={onToast} />
+
       <div className="settings-group">
         <h3 className="settings-group-title">{t("settings.sync.otherServices")}</h3>
         {unavailable.map((s) => (
@@ -1065,6 +1076,99 @@ function SyncSection({ onToast }: { onToast: (m: string) => void }) {
         ))}
       </div>
     </>
+  );
+}
+
+/* ── Readwise Reader pull (one-way sync) ─────────────────── */
+// One-way pull from Readwise Reader's document list into a synthetic feed.
+// Token storage is shared with the existing highlights integration
+// (`readwise_token`); the API token never crosses the IPC boundary here —
+// only the location / withHtml knobs the user picks below.
+function ReadwiseReaderGroup({ onToast }: { onToast: (m: string) => void }) {
+  const { t } = useTranslation();
+  const actions = useArticleActions();
+  const [location, setLocation] = useState<ReadwiseLocation>(
+    DEFAULT_READWISE_LOCATION,
+  );
+  const [withHtml, setWithHtml] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api
+      .getSetting(READWISE_LOCATION_SETTING)
+      .then((v) => setLocation(parseReadwiseLocation(v)))
+      .catch(() => {});
+    api
+      .getSetting(READWISE_WITH_HTML_SETTING)
+      .then((v) => {
+        if (v != null && v !== "") setWithHtml(v === "1");
+      })
+      .catch(() => {});
+  }, []);
+
+  const changeLocation = (v: ReadwiseLocation) => {
+    setLocation(v);
+    api.setSetting(READWISE_LOCATION_SETTING, v).catch(() => {});
+  };
+  const changeWithHtml = (v: boolean) => {
+    setWithHtml(v);
+    api.setSetting(READWISE_WITH_HTML_SETTING, v ? "1" : "0").catch(() => {});
+  };
+
+  const syncNow = async () => {
+    setBusy(true);
+    try {
+      const n = await api.readwiseReaderSync(location, withHtml);
+      // The backend just emitted feeds-updated; this refreshes the same
+      // article-bearing caches FreshRSS sync touches so newly-pulled
+      // Reader documents appear in the sidebar / article list immediately.
+      actions.refreshAfterBulk();
+      onToast(t("settings.sync.readwise.syncDone", { count: n }));
+    } catch (e) {
+      reportError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const locationOptions = READWISE_LOCATIONS.map((l) => ({
+    value: l,
+    label: t(readwiseLocationLabelKey(l)),
+  }));
+
+  return (
+    <div className="settings-group">
+      <h3 className="settings-group-title">
+        {t("settings.sync.readwise.title")}
+      </h3>
+      <p className="modal-hint" style={{ marginBottom: 14 }}>
+        {t("settings.sync.readwise.hint")}
+      </p>
+      <Row
+        label={t("settings.sync.readwise.locationLabel")}
+        desc={t("settings.sync.readwise.locationDesc")}
+      >
+        <Select<ReadwiseLocation>
+          value={location}
+          options={locationOptions}
+          onChange={changeLocation}
+        />
+      </Row>
+      <Row
+        label={t("settings.sync.readwise.withHtmlLabel")}
+        desc={t("settings.sync.readwise.withHtmlDesc")}
+      >
+        <Toggle checked={withHtml} onChange={changeWithHtml} />
+      </Row>
+      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        <button className="s-btn primary" onClick={syncNow} disabled={busy}>
+          <Icon name="refresh" size={12} />{" "}
+          {busy
+            ? t("settings.sync.readwise.syncing")
+            : t("settings.sync.readwise.syncNow")}
+        </button>
+      </div>
+    </div>
   );
 }
 
