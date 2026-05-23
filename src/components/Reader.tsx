@@ -194,25 +194,49 @@ export default function Reader({ onToast }: Props) {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [id]);
 
-  // Hide article-body images that fail to load — a broken-image icon in the
-  // middle of an article is just noise. Runs whenever the body changes
-  // (article switch, extract toggle, extraction finishing).
+  // Keep the article body's height stable around images that load slowly or
+  // fail — neither case should jolt the user's scroll position downward as
+  // the surrounding text shifts. The previous version did `display:none` on
+  // error, which collapses the layout the moment a lazy-loaded image fails
+  // (common on anti-scrape sites that gate hotlinking) and visually reads
+  // as the article "jumping". Here every body `<img>` starts with an
+  // `img-pending` class that reserves a placeholder height in styles.css;
+  // on load the class is removed (so a small inline image isn't padded to
+  // 12rem), and on error it is swapped for `img-broken` (which keeps the
+  // reserved height and shows a captioned placeholder). Lazy loading is
+  // also forced off — a feed that ships `loading="lazy"` would otherwise
+  // delay the layout to mid-scroll, defeating the placeholder. Runs
+  // whenever the body changes.
   useEffect(() => {
     const el = bodyRef.current;
     if (!el) return;
-    const hide = (e: Event) => {
-      (e.currentTarget as HTMLElement).style.display = "none";
+    const onLoad = (e: Event) => {
+      (e.currentTarget as HTMLImageElement).classList.remove("img-pending");
+    };
+    const onError = (e: Event) => {
+      const img = e.currentTarget as HTMLImageElement;
+      img.classList.remove("img-pending");
+      img.classList.add("img-broken");
     };
     const watched: HTMLImageElement[] = [];
     el.querySelectorAll("img").forEach((img) => {
-      if (img.complete && img.naturalWidth === 0) {
-        img.style.display = "none";
+      if (img.loading === "lazy") img.loading = "eager";
+      if (img.complete) {
+        // Already settled by the time we observe it.
+        if (img.naturalWidth === 0) img.classList.add("img-broken");
       } else {
-        img.addEventListener("error", hide);
+        img.classList.add("img-pending");
+        img.addEventListener("load", onLoad);
+        img.addEventListener("error", onError);
         watched.push(img);
       }
     });
-    return () => watched.forEach((img) => img.removeEventListener("error", hide));
+    return () => {
+      watched.forEach((img) => {
+        img.removeEventListener("load", onLoad);
+        img.removeEventListener("error", onError);
+      });
+    };
   }, [a?.id, showExtracted, a?.extractedHtml, showTranslation, a?.translatedHtml]);
 
   // Mark as read once when an unread article is opened (if the user opted in).
