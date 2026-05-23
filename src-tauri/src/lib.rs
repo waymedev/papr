@@ -194,6 +194,7 @@ pub fn run() {
             commands::add_feed,
             commands::search_feed_directory,
             commands::delete_feed,
+            commands::clear_feed_items,
             commands::move_feed,
             commands::rename_feed,
             commands::refresh_feeds,

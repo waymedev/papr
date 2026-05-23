@@ -619,6 +619,22 @@ pub fn delete_feed(conn: &Connection, id: i64) -> AppResult<()> {
     Ok(())
 }
 
+/// Delete every article belonging to `feed_id` and reset the feed's conditional
+/// GET cursors. The feed row itself stays subscribed; the next refresh will
+/// repopulate from the upstream document. Etag/Last-Modified are cleared so
+/// the server returns a full body instead of a 304 against state we no longer
+/// have. Returns the number of articles removed.
+pub fn clear_feed_items(conn: &Connection, feed_id: i64) -> AppResult<usize> {
+    let tx = conn.unchecked_transaction()?;
+    let removed = tx.execute("DELETE FROM articles WHERE feed_id = ?1", params![feed_id])?;
+    tx.execute(
+        "UPDATE feeds SET etag = NULL, last_modified = NULL WHERE id = ?1",
+        params![feed_id],
+    )?;
+    tx.commit()?;
+    Ok(removed)
+}
+
 /// Feeds for OPML export as `(title, feed_url, folder)` tuples. Sources whose
 /// `feed_url` is not a real, re-importable RSS document are excluded:
 /// - Newsletters: synthetic `imap://user@host:port/folder` — would round-trip
@@ -3433,6 +3449,82 @@ mod tests {
             )
             .unwrap();
         assert_eq!(kept, 1, "the fresh article survives a non-positive window");
+    }
+
+    // ── clear-feed-items ─────────────────────────────────────────────
+
+    #[test]
+    fn clear_feed_items_wipes_only_the_target_feed() {
+        // A second feed shares the database. Clearing one feed must leave the
+        // other's articles untouched — and the feed row itself must survive
+        // (clear is a content reset, not an unsubscribe).
+        let (conn, _fixture) = test_db();
+        let target: i64 = conn
+            .query_row("SELECT id FROM feeds", [], |r| r.get(0))
+            .unwrap();
+        let other = insert_feed(
+            &conn,
+            "https://other.example.com/feed.xml",
+            None,
+            "Other",
+            None,
+            SourceType::Rss,
+            None,
+        )
+        .unwrap();
+        let extra = NewArticle {
+            guid: "g-other".into(),
+            url: None,
+            title: "Keep me".into(),
+            author: None,
+            summary: None,
+            content_html: None,
+            body_text: String::new(),
+            image_url: None,
+            published_at: None,
+            enclosures: Vec::new(),
+        };
+        upsert_article(&conn, other, &extra, false, &[]).unwrap();
+        // Seed conditional-GET cursors so we can prove they're reset.
+        set_feed_fetch_state(
+            &conn,
+            target,
+            Some("\"etag-x\""),
+            Some("Wed, 01 Jan 2025 00:00:00 GMT"),
+            None,
+        )
+        .unwrap();
+
+        let removed = clear_feed_items(&conn, target).unwrap();
+        assert_eq!(removed, 1, "the one fixture article on the target feed is gone");
+
+        // Target feed still exists, but with no articles and no cached cursors.
+        let target_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM articles WHERE feed_id = ?1",
+                params![target],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(target_count, 0);
+        let feed_row: (Option<String>, Option<String>) = conn
+            .query_row(
+                "SELECT etag, last_modified FROM feeds WHERE id = ?1",
+                params![target],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(feed_row, (None, None), "conditional-GET cursors reset so refresh repopulates");
+
+        // The other feed's article is untouched.
+        let other_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM articles WHERE feed_id = ?1",
+                params![other],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(other_count, 1, "a sibling feed's articles must survive");
     }
 
     // ── article-list chronological ordering ──────────────────────────
