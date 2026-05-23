@@ -91,6 +91,27 @@ export const smartCounts = () => invoke<SmartCounts>("smart_counts");
 export const extractFulltext = (articleId: number) =>
   invoke<string>("extract_fulltext", { articleId });
 
+/** External reader-mode providers available behind the in-reader
+ *  "fetch full text" dropdown. The values are passed verbatim to the
+ *  Tauri command, which formats the upstream URL. */
+export type FullTextProvider = "defuddle" | "jina";
+
+export interface FullTextResponse {
+  provider: FullTextProvider;
+  body: string;
+  sourceUrl: string;
+}
+
+/** Fetch the article through an external reader-mode service. The body is
+ *  either HTML (defuddle) or Markdown (r.jina.ai); the caller decides how to
+ *  render. The result is **not persisted** — it overrides the current view
+ *  only. */
+export const fetchArticleFullText = (
+  articleId: number,
+  provider: FullTextProvider,
+) =>
+  invoke<FullTextResponse>("fetch_article_full_text", { articleId, provider });
+
 // ── OPML ──
 export const importOpml = (content: string) =>
   invoke<number>("import_opml", { content });

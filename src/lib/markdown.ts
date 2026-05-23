@@ -72,3 +72,63 @@ export function renderMarkdown(text: string): string {
   for (const child of Array.from(doc.body.children)) sanitizeElement(child);
   return doc.body.innerHTML;
 }
+
+// Reader-mode HTML returned by an external full-text provider (defuddle.md
+// gives HTML; r.jina.ai gives Markdown that `marked` then turns into HTML).
+// Stripped via the same DOM allowlist as `renderMarkdown` but with images,
+// figures, and basic captions kept — reader-mode pages rely on those.
+const READER_ALLOWED_TAGS = new Set([
+  ...ALLOWED_TAGS,
+  "img",
+  "figure",
+  "figcaption",
+  "picture",
+  "source",
+]);
+const READER_ALLOWED_ATTRS: Record<string, Set<string>> = {
+  ...ALLOWED_ATTRS,
+  img: new Set(["src", "alt", "title", "width", "height"]),
+  source: new Set(["src", "srcset", "type", "media"]),
+};
+const SAFE_IMG_SRC = /^(https?:|data:image\/)/i;
+
+function sanitizeReaderElement(el: Element) {
+  for (const child of Array.from(el.children)) sanitizeReaderElement(child);
+  const tag = el.tagName.toLowerCase();
+  if (DROP_TAGS.has(tag)) {
+    el.remove();
+    return;
+  }
+  if (!READER_ALLOWED_TAGS.has(tag)) {
+    el.replaceWith(...Array.from(el.childNodes));
+    return;
+  }
+  const allowed = READER_ALLOWED_ATTRS[tag];
+  for (const attr of Array.from(el.attributes)) {
+    if (!allowed || !allowed.has(attr.name.toLowerCase())) {
+      el.removeAttribute(attr.name);
+    }
+  }
+  if (tag === "a") {
+    const href = (el.getAttribute("href") ?? "").trim();
+    if (SAFE_HREF.test(href)) {
+      el.setAttribute("rel", "noopener noreferrer nofollow");
+    } else {
+      el.removeAttribute("href");
+    }
+  } else if (tag === "img" || tag === "source") {
+    const src = (el.getAttribute("src") ?? "").trim();
+    if (src && !SAFE_IMG_SRC.test(src)) el.removeAttribute("src");
+  }
+}
+
+/** Render content returned by the "fetch full text" providers. Markdown is
+ *  parsed through `marked`; raw HTML is passed through unchanged. Both pass
+ *  through a permissive DOM allowlist (images allowed, scripts/handlers
+ *  removed). */
+export function renderProviderBody(text: string, kind: "html" | "markdown"): string {
+  const raw = kind === "markdown" ? marked.parse(text, { async: false }) : text;
+  const doc = new DOMParser().parseFromString(raw, "text/html");
+  for (const child of Array.from(doc.body.children)) sanitizeReaderElement(child);
+  return doc.body.innerHTML;
+}
