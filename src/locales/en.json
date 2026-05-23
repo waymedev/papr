@@ -351,6 +351,18 @@
       "readwise": {
         "title": "Readwise Reader",
         "hint": "Pull saved documents from Readwise Reader into Papr as a read-only feed. Uses the API token shared with the highlights integration.",
+        "tokenLabel": "API token",
+        "tokenDesc": "Personal Readwise access token. Generate one at readwise.io/access_token.",
+        "tokenPlaceholder": "Paste your Readwise token",
+        "tokenSave": "Save",
+        "tokenClear": "Clear",
+        "tokenTest": "Test connection",
+        "tokenStatusSet": "Set ✓",
+        "tokenStatusUnset": "Not set",
+        "tokenSaved": "Readwise token saved",
+        "tokenCleared": "Readwise token cleared",
+        "tokenTestSuccess": "Readwise token works",
+        "tokenTestFailed": "Readwise token test failed: {{reason}}",
         "locationLabel": "Location",
         "locationDesc": "Which Reader bucket to pull on each sync.",
         "withHtmlLabel": "Include full content",
@@ -553,7 +565,9 @@
     "noKindleConfig": "Configure your Kindle address and SMTP server in Settings → Integrations",
     "noReadwiseToken": "Add your Readwise API token in Settings → Integrations",
     "noReadwiseFeed": "The Readwise Reader feed is missing — restart Papr to run the database migration",
-    "readwiseRateLimited": "Readwise returned 429 after the Retry-After backoff window — try again later"
+    "readwiseRateLimited": "Readwise returned 429 after the Retry-After backoff window — try again later",
+    "emptyReadwiseToken": "Enter a Readwise API token before saving",
+    "readwiseTokenInvalid": "Readwise rejected the token — it may be invalid or expired"
   },
   "highlights": {
     "toolbarLabel": "Highlight color",

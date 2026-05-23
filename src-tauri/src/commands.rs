@@ -835,6 +835,90 @@ pub async fn refresh_tray(app: AppHandle) -> AppResult<()> {
 
 // ─────────────────────────── Readwise Reader ───────────────────────────
 
+/// Whether a Readwise API token is currently stored. Reported through
+/// `readwise_get_token_status` so the Settings panel can show "Set ✓" /
+/// "Not set" without ever pulling the token itself across the IPC boundary.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadwiseTokenStatus {
+    pub has_token: bool,
+}
+
+/// Pin a new Readwise API token. Stored under the `readwise_token` settings
+/// key shared with the highlights integration; trims surrounding whitespace
+/// so a copy-paste with a stray newline still saves correctly. Empty input
+/// is rejected so the UI's "Clear" button is the only path to a tombstoned
+/// value — saving "" silently would look like a successful save but disable
+/// every Readwise sync.
+#[tauri::command]
+pub async fn readwise_set_token(state: State<'_, AppState>, token: String) -> AppResult<()> {
+    let trimmed = token.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::code("emptyReadwiseToken"));
+    }
+    let conn = state.db.lock().await;
+    db::set_setting(&conn, crate::readwise_reader::TOKEN_SETTING, trimmed)
+}
+
+/// Check whether a Readwise token is currently configured. Never returns
+/// the token itself — only a presence flag — so the renderer cannot accidentally
+/// log or display the plaintext value.
+#[tauri::command]
+pub async fn readwise_get_token_status(
+    state: State<'_, AppState>,
+) -> AppResult<ReadwiseTokenStatus> {
+    let conn = state.read().await;
+    let has_token = crate::readwise_reader::read_token(&conn)?.is_some();
+    Ok(ReadwiseTokenStatus { has_token })
+}
+
+/// Tombstone the stored token by writing an empty string. `read_token`
+/// already treats `""` as "no token", so existing sync paths fall back to
+/// the `noReadwiseToken` error without further changes.
+#[tauri::command]
+pub async fn readwise_clear_token(state: State<'_, AppState>) -> AppResult<()> {
+    let conn = state.db.lock().await;
+    db::set_setting(&conn, crate::readwise_reader::TOKEN_SETTING, "")
+}
+
+/// Verify the stored token by issuing a single 1-row Reader list request.
+/// Maps 401/403 to a localisable `readwiseTokenInvalid` code so the UI can
+/// render a translated message instead of dumping the raw HTTP error. Any
+/// other transport failure surfaces as the normal `network` error.
+#[tauri::command]
+pub async fn readwise_test_token(state: State<'_, AppState>) -> AppResult<()> {
+    use crate::readwise_reader;
+
+    let token = {
+        let conn = state.read().await;
+        readwise_reader::read_token(&conn)?
+            .ok_or_else(|| AppError::code("noReadwiseToken"))?
+    };
+
+    // A single-page, no-html, `later` probe is the cheapest call that still
+    // exercises auth. We discard the result; we only care that the request
+    // didn't 401/403.
+    let opts = readwise_reader::FetchOptions {
+        location: Some("later".to_string()),
+        ..Default::default()
+    };
+    let http = state.http();
+    match readwise_reader::fetch_documents(&http, &token, &opts).await {
+        Ok(_) => Ok(()),
+        Err(AppError::Http(e)) => {
+            if matches!(
+                e.status(),
+                Some(reqwest::StatusCode::UNAUTHORIZED) | Some(reqwest::StatusCode::FORBIDDEN)
+            ) {
+                Err(AppError::code("readwiseTokenInvalid"))
+            } else {
+                Err(AppError::Http(e))
+            }
+        }
+        Err(other) => Err(other),
+    }
+}
+
 /// Pull the user's Readwise Reader document list and upsert each parent doc
 /// into the synthetic Readwise feed. Returns the number of *new* documents
 /// added on this run (existing docs are still updated in place — see

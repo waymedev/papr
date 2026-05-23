@@ -351,6 +351,18 @@
       "readwise": {
         "title": "Readwise Reader",
         "hint": "从 Readwise Reader 拉取已保存文档，并作为只读订阅源加入 Papr。使用与标注同步共用的 API token。",
+        "tokenLabel": "API token",
+        "tokenDesc": "Readwise 个人访问令牌，可在 readwise.io/access_token 生成。",
+        "tokenPlaceholder": "粘贴你的 Readwise token",
+        "tokenSave": "保存",
+        "tokenClear": "清除",
+        "tokenTest": "测试连接",
+        "tokenStatusSet": "已设置 ✓",
+        "tokenStatusUnset": "未设置",
+        "tokenSaved": "Readwise token 已保存",
+        "tokenCleared": "Readwise token 已清除",
+        "tokenTestSuccess": "Readwise token 可用",
+        "tokenTestFailed": "Readwise token 测试失败：{{reason}}",
         "locationLabel": "位置",
         "locationDesc": "每次同步要拉取的 Reader 文档分区。",
         "withHtmlLabel": "包含全文内容",
@@ -553,7 +565,9 @@
     "noKindleConfig": "请在 设置 → 集成 中配置 Kindle 地址和 SMTP 服务器",
     "noReadwiseToken": "请在 设置 → 集成 中添加 Readwise API token",
     "noReadwiseFeed": "缺少 Readwise Reader 订阅源，请重启 Papr 以执行数据库迁移",
-    "readwiseRateLimited": "Readwise 在 Retry-After 退避窗口后仍返回 429，请稍后再试"
+    "readwiseRateLimited": "Readwise 在 Retry-After 退避窗口后仍返回 429，请稍后再试",
+    "emptyReadwiseToken": "保存前请先输入 Readwise API token",
+    "readwiseTokenInvalid": "Readwise 拒绝了该 token——可能无效或已过期"
   },
   "highlights": {
     "toolbarLabel": "高亮颜色",

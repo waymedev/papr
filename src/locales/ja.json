@@ -351,6 +351,18 @@
       "readwise": {
         "title": "Readwise Reader",
         "hint": "Readwise Reader に保存したドキュメントを Papr の読み取り専用フィードとして取り込みます。ハイライト連携と同じ API トークンを使います。",
+        "tokenLabel": "API トークン",
+        "tokenDesc": "Readwise のパーソナルアクセストークンです。readwise.io/access_token で発行できます。",
+        "tokenPlaceholder": "Readwise トークンを貼り付け",
+        "tokenSave": "保存",
+        "tokenClear": "削除",
+        "tokenTest": "接続テスト",
+        "tokenStatusSet": "設定済み ✓",
+        "tokenStatusUnset": "未設定",
+        "tokenSaved": "Readwise トークンを保存しました",
+        "tokenCleared": "Readwise トークンを削除しました",
+        "tokenTestSuccess": "Readwise トークンは有効です",
+        "tokenTestFailed": "Readwise トークンの確認に失敗しました：{{reason}}",
         "locationLabel": "場所",
         "locationDesc": "同期ごとに取得する Reader の場所を選びます。",
         "withHtmlLabel": "全文を含める",
@@ -553,7 +565,9 @@
     "noKindleConfig": "設定 → 連携 で Kindle アドレスと SMTP サーバーを設定してください",
     "noReadwiseToken": "設定 → 連携 で Readwise API トークンを追加してください",
     "noReadwiseFeed": "Readwise Reader フィードが見つかりません。Papr を再起動してデータベース移行を実行してください",
-    "readwiseRateLimited": "Readwise が Retry-After の待機後も 429 を返しました。しばらくしてから再試行してください"
+    "readwiseRateLimited": "Readwise が Retry-After の待機後も 429 を返しました。しばらくしてから再試行してください",
+    "emptyReadwiseToken": "保存前に Readwise API トークンを入力してください",
+    "readwiseTokenInvalid": "Readwise がトークンを拒否しました。無効または期限切れの可能性があります"
   },
   "highlights": {
     "toolbarLabel": "ハイライトの色",

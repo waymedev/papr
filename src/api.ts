@@ -191,6 +191,22 @@ export const readwiseReaderSync = (
   withHtml: boolean,
 ) => invoke<number>("readwise_reader_sync", { location, withHtml });
 
+/** Whether a Readwise API token is currently stored. The backend never
+ *  returns the token itself — only a presence flag — so the renderer cannot
+ *  accidentally surface or log the plaintext. */
+export interface ReadwiseTokenStatus {
+  hasToken: boolean;
+}
+export const readwiseGetTokenStatus = () =>
+  invoke<ReadwiseTokenStatus>("readwise_get_token_status");
+export const readwiseSetToken = (token: string) =>
+  invoke<void>("readwise_set_token", { token });
+export const readwiseClearToken = () => invoke<void>("readwise_clear_token");
+/** Verify the stored token with a single 1-row Reader list request. Resolves
+ *  on success; rejects with `readwiseTokenInvalid` (401/403) or the underlying
+ *  network error otherwise. */
+export const readwiseTestToken = () => invoke<void>("readwise_test_token");
+
 // ── tray ──
 export const refreshTray = () => invoke<void>("refresh_tray");
 

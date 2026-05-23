@@ -1082,9 +1082,10 @@ function SyncSection({ onToast }: { onToast: (m: string) => void }) {
 
 /* ── Readwise Reader pull (one-way sync) ─────────────────── */
 // One-way pull from Readwise Reader's document list into a synthetic feed.
-// Token storage is shared with the existing highlights integration
-// (`readwise_token`); the API token never crosses the IPC boundary here —
-// only the location / withHtml knobs the user picks below.
+// The token input on this panel writes to the `readwise_token` settings key
+// (shared with the existing highlights integration). The plaintext token
+// never round-trips back through IPC — `readwise_get_token_status` only
+// returns a presence flag, so the renderer never holds the saved value.
 function ReadwiseReaderGroup({ onToast }: { onToast: (m: string) => void }) {
   const { t } = useTranslation();
   const actions = useArticleActions();
@@ -1093,6 +1094,13 @@ function ReadwiseReaderGroup({ onToast }: { onToast: (m: string) => void }) {
   );
   const [withHtml, setWithHtml] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Local-only buffer for the token input. We never hydrate it from the
+  // saved value (the backend refuses to leak the plaintext), so the field
+  // shows "set ✓" / "not set" status separately and only carries data while
+  // the user is typing a new token.
+  const [tokenInput, setTokenInput] = useState("");
+  const [hasToken, setHasToken] = useState<boolean | null>(null);
+  const [tokenBusy, setTokenBusy] = useState(false);
 
   useEffect(() => {
     api
@@ -1105,6 +1113,10 @@ function ReadwiseReaderGroup({ onToast }: { onToast: (m: string) => void }) {
         if (v != null && v !== "") setWithHtml(v === "1");
       })
       .catch(() => {});
+    api
+      .readwiseGetTokenStatus()
+      .then((s) => setHasToken(s.hasToken))
+      .catch(() => setHasToken(false));
   }, []);
 
   const changeLocation = (v: ReadwiseLocation) => {
@@ -1114,6 +1126,53 @@ function ReadwiseReaderGroup({ onToast }: { onToast: (m: string) => void }) {
   const changeWithHtml = (v: boolean) => {
     setWithHtml(v);
     api.setSetting(READWISE_WITH_HTML_SETTING, v ? "1" : "0").catch(() => {});
+  };
+
+  const saveToken = async () => {
+    const trimmed = tokenInput.trim();
+    if (!trimmed) return;
+    setTokenBusy(true);
+    try {
+      await api.readwiseSetToken(trimmed);
+      // Clear the input immediately so the plaintext doesn't linger in the
+      // DOM after the user navigates away. The status flag is the only
+      // signal we keep on screen.
+      setTokenInput("");
+      setHasToken(true);
+      onToast(t("settings.sync.readwise.tokenSaved"));
+    } catch (e) {
+      toast.error(errorText(e));
+    } finally {
+      setTokenBusy(false);
+    }
+  };
+
+  const clearToken = async () => {
+    setTokenBusy(true);
+    try {
+      await api.readwiseClearToken();
+      setTokenInput("");
+      setHasToken(false);
+      onToast(t("settings.sync.readwise.tokenCleared"));
+    } catch (e) {
+      toast.error(errorText(e));
+    } finally {
+      setTokenBusy(false);
+    }
+  };
+
+  const testToken = async () => {
+    setTokenBusy(true);
+    try {
+      await api.readwiseTestToken();
+      onToast(t("settings.sync.readwise.tokenTestSuccess"));
+    } catch (e) {
+      toast.error(
+        t("settings.sync.readwise.tokenTestFailed", { reason: errorText(e) }),
+      );
+    } finally {
+      setTokenBusy(false);
+    }
   };
 
   const syncNow = async () => {
@@ -1137,6 +1196,13 @@ function ReadwiseReaderGroup({ onToast }: { onToast: (m: string) => void }) {
     label: t(readwiseLocationLabelKey(l)),
   }));
 
+  const tokenStatusLabel =
+    hasToken === null
+      ? ""
+      : hasToken
+        ? t("settings.sync.readwise.tokenStatusSet")
+        : t("settings.sync.readwise.tokenStatusUnset");
+
   return (
     <div className="settings-group">
       <h3 className="settings-group-title">
@@ -1145,6 +1211,53 @@ function ReadwiseReaderGroup({ onToast }: { onToast: (m: string) => void }) {
       <p className="modal-hint" style={{ marginBottom: 14 }}>
         {t("settings.sync.readwise.hint")}
       </p>
+      <Row
+        label={t("settings.sync.readwise.tokenLabel")}
+        desc={t("settings.sync.readwise.tokenDesc")}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+          <input
+            className="s-text-input"
+            type="password"
+            value={tokenInput}
+            placeholder={t("settings.sync.readwise.tokenPlaceholder")}
+            autoComplete="off"
+            spellCheck={false}
+            onChange={(e) => setTokenInput(e.target.value)}
+          />
+          <span
+            style={{
+              fontSize: 12,
+              color: hasToken ? "var(--accent, #2c8a3e)" : "var(--muted)",
+            }}
+          >
+            {tokenStatusLabel}
+          </span>
+        </div>
+      </Row>
+      <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+        <button
+          className="s-btn primary"
+          onClick={saveToken}
+          disabled={tokenBusy || !tokenInput.trim()}
+        >
+          {t("settings.sync.readwise.tokenSave")}
+        </button>
+        <button
+          className="s-btn"
+          onClick={testToken}
+          disabled={tokenBusy || !hasToken}
+        >
+          {t("settings.sync.readwise.tokenTest")}
+        </button>
+        <button
+          className="s-btn"
+          onClick={clearToken}
+          disabled={tokenBusy || !hasToken}
+        >
+          {t("settings.sync.readwise.tokenClear")}
+        </button>
+      </div>
       <Row
         label={t("settings.sync.readwise.locationLabel")}
         desc={t("settings.sync.readwise.locationDesc")}
