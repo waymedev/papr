@@ -275,10 +275,7 @@ export default function Reader({ onToast }: Props) {
     }) => api.fetchArticleFullText(articleId, provider),
     onSuccess: (res, vars) => {
       if (useUi.getState().selectedArticleId !== vars.articleId) return;
-      const html = renderProviderBody(
-        res.body,
-        vars.provider === "jina" ? "markdown" : "html",
-      );
+      const html = renderProviderBody(res.body, "markdown");
       if (!html.trim()) {
         reportError(new Error(t("reader.providerEmpty")));
         return;

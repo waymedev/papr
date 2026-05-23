@@ -400,14 +400,14 @@ pub async fn extract_fulltext(state: State<'_, AppState>, article_id: i64) -> Ap
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FullTextProvider {
-    /// defuddle.md returns reader-mode HTML.
+    /// defuddle.md returns reader-mode content rendered as Markdown by the UI.
     Defuddle,
     /// r.jina.ai returns LLM-friendly Markdown.
     Jina,
 }
 
-/// Response from `fetch_article_full_text`. `body` is the raw provider payload
-/// (HTML or Markdown depending on `provider`); the frontend picks the renderer.
+/// Response from `fetch_article_full_text`. `body` is the raw provider payload;
+/// the frontend renders supported providers as Markdown.
 #[derive(Debug, Serialize)]
 pub struct FullTextResponse {
     pub provider: &'static str,
