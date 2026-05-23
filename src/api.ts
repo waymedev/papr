@@ -102,10 +102,9 @@ export interface FullTextResponse {
   sourceUrl: string;
 }
 
-/** Fetch the article through an external reader-mode service. The body is
- *  either HTML (defuddle) or Markdown (r.jina.ai); the caller decides how to
- *  render. The result is **not persisted** — it overrides the current view
- *  only. */
+/** Fetch the article through an external reader-mode service. The raw provider
+ *  body is rendered as Markdown by the caller. The result is **not persisted**
+ *  and only overrides the current view. */
 export const fetchArticleFullText = (
   articleId: number,
   provider: FullTextProvider,

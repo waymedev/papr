@@ -73,10 +73,10 @@ export function renderMarkdown(text: string): string {
   return doc.body.innerHTML;
 }
 
-// Reader-mode HTML returned by an external full-text provider (defuddle.md
-// gives HTML; r.jina.ai gives Markdown that `marked` then turns into HTML).
-// Stripped via the same DOM allowlist as `renderMarkdown` but with images,
-// figures, and basic captions kept — reader-mode pages rely on those.
+// Reader-mode content returned by external full-text providers. Providers are
+// rendered as Markdown first, then stripped via the same DOM allowlist as
+// `renderMarkdown` but with images, figures, and basic captions kept.
+// Reader-mode pages rely on those.
 const READER_ALLOWED_TAGS = new Set([
   ...ALLOWED_TAGS,
   "img",
@@ -123,9 +123,9 @@ function sanitizeReaderElement(el: Element) {
 }
 
 /** Render content returned by the "fetch full text" providers. Markdown is
- *  parsed through `marked`; raw HTML is passed through unchanged. Both pass
- *  through a permissive DOM allowlist (images allowed, scripts/handlers
- *  removed). */
+ *  parsed through `marked`; HTML-only providers may pass raw HTML through by
+ *  using `kind: "html"`. Both pass through a permissive DOM allowlist (images
+ *  allowed, scripts/handlers removed). */
 export function renderProviderBody(text: string, kind: "html" | "markdown"): string {
   const raw = kind === "markdown" ? marked.parse(text, { async: false }) : text;
   const doc = new DOMParser().parseFromString(raw, "text/html");
