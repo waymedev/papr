@@ -925,11 +925,12 @@ pub async fn readwise_test_token(state: State<'_, AppState>) -> AppResult<()> {
 /// `db::upsert_readwise_document` — but only the genuinely-new tally is what
 /// the "N new" toast wants to display, matching how the RSS scheduler counts).
 ///
-/// `location` filters which Reader location to pull (`new` / `later` /
-/// `shortlist` / `archive` / `feed`); `with_html` toggles the costly
-/// `withHtmlContent=true` request flag. Both are decided by the UI; the
-/// command itself stays oblivious so future settings (e.g. a saved default
-/// location) plumb through without touching the IPC surface.
+/// `category` filters which Reader category to pull (`article` / `email` /
+/// `rss` / `highlight` / `note` / `pdf` / `epub` / `tweet` / `video`);
+/// `None` means no category filter (pull everything). `with_html` toggles
+/// the costly `withHtmlContent=true` request flag. Both are decided by the
+/// UI; the command itself stays oblivious so future settings plumb through
+/// without touching the IPC surface.
 ///
 /// The HTTP fetch and the DB write are intentionally split so the writer lock
 /// is never held across the (slow, 20-req/min throttled) network pull —
@@ -939,7 +940,7 @@ pub async fn readwise_test_token(state: State<'_, AppState>) -> AppResult<()> {
 #[tauri::command]
 pub async fn readwise_reader_sync(
     app: AppHandle,
-    location: Option<String>,
+    category: Option<String>,
     with_html: bool,
 ) -> AppResult<usize> {
     use crate::readwise_reader;
@@ -955,10 +956,10 @@ pub async fn readwise_reader_sync(
             .ok_or_else(|| AppError::code("noReadwiseToken"))?
     };
 
-    // 2. Pull every parent document matching the location filter. The client
+    // 2. Pull every parent document matching the category filter. The client
     //    handles cursor pagination, 20-req/min throttling and 429 backoff.
     let opts = readwise_reader::FetchOptions {
-        location,
+        category,
         with_html_content: with_html,
         ..Default::default()
     };

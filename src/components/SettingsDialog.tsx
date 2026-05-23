@@ -15,14 +15,13 @@ import { reportError, toast } from "../toast";
 import { checkForUpdates } from "../lib/updater";
 import { downloadFile } from "../lib/download";
 import type { Feed, Rule, RuleAction, RuleField, RulePreview } from "../types";
-import type { ReadwiseLocation } from "../api";
+import type { ReadwiseCategory } from "../api";
 import {
-  DEFAULT_READWISE_LOCATION,
-  READWISE_LOCATIONS,
-  READWISE_LOCATION_SETTING,
+  READWISE_CATEGORIES,
+  READWISE_CATEGORY_SETTING,
   READWISE_WITH_HTML_SETTING,
-  parseReadwiseLocation,
-  readwiseLocationLabelKey,
+  parseReadwiseCategory,
+  readwiseCategoryLabelKey,
 } from "../lib/readwise";
 import Icon, { type IconName } from "./Icon";
 import ConfirmDialog from "./ConfirmDialog";
@@ -1086,12 +1085,21 @@ function SyncSection({ onToast }: { onToast: (m: string) => void }) {
 // (shared with the existing highlights integration). The plaintext token
 // never round-trips back through IPC — `readwise_get_token_status` only
 // returns a presence flag, so the renderer never holds the saved value.
+// Sentinel value for the "no category filter" option in the <Select>. The
+// real setting (and the IPC payload) is `null` for this case, but a
+// <select> element can't carry a non-string value, so we round-trip through
+// an empty string at the UI boundary only.
+const READWISE_CATEGORY_ANY = "";
+// Legacy settings key that previously held a Reader *location* value
+// (`new`/`later`/...). CWM-46 replaced this field with a Reader *category*
+// (`article`/`email`/...), so the old key's value is meaningless under the
+// new semantics. Clear it on mount so it doesn't linger in the DB.
+const LEGACY_READWISE_LOCATION_SETTING = "readwise_reader_location";
+
 function ReadwiseReaderGroup({ onToast }: { onToast: (m: string) => void }) {
   const { t } = useTranslation();
   const actions = useArticleActions();
-  const [location, setLocation] = useState<ReadwiseLocation>(
-    DEFAULT_READWISE_LOCATION,
-  );
+  const [category, setCategory] = useState<ReadwiseCategory | null>(null);
   const [withHtml, setWithHtml] = useState(false);
   const [busy, setBusy] = useState(false);
   // Local-only buffer for the token input. We never hydrate it from the
@@ -1104,9 +1112,14 @@ function ReadwiseReaderGroup({ onToast }: { onToast: (m: string) => void }) {
 
   useEffect(() => {
     api
-      .getSetting(READWISE_LOCATION_SETTING)
-      .then((v) => setLocation(parseReadwiseLocation(v)))
+      .getSetting(READWISE_CATEGORY_SETTING)
+      .then((v) => setCategory(parseReadwiseCategory(v)))
       .catch(() => {});
+    // One-shot legacy cleanup: previous builds stored a Reader location
+    // here. The values (`new`/`later`/...) are not valid categories, so
+    // discard them — see CWM-46. Best-effort; a failure just leaves a
+    // harmless unused row in the settings table.
+    api.setSetting(LEGACY_READWISE_LOCATION_SETTING, "").catch(() => {});
     api
       .getSetting(READWISE_WITH_HTML_SETTING)
       .then((v) => {
@@ -1119,9 +1132,13 @@ function ReadwiseReaderGroup({ onToast }: { onToast: (m: string) => void }) {
       .catch(() => setHasToken(false));
   }, []);
 
-  const changeLocation = (v: ReadwiseLocation) => {
-    setLocation(v);
-    api.setSetting(READWISE_LOCATION_SETTING, v).catch(() => {});
+  const changeCategory = (v: string) => {
+    const next: ReadwiseCategory | null =
+      v === READWISE_CATEGORY_ANY
+        ? null
+        : (v as ReadwiseCategory);
+    setCategory(next);
+    api.setSetting(READWISE_CATEGORY_SETTING, next ?? "").catch(() => {});
   };
   const changeWithHtml = (v: boolean) => {
     setWithHtml(v);
@@ -1178,7 +1195,7 @@ function ReadwiseReaderGroup({ onToast }: { onToast: (m: string) => void }) {
   const syncNow = async () => {
     setBusy(true);
     try {
-      const n = await api.readwiseReaderSync(location, withHtml);
+      const n = await api.readwiseReaderSync(category, withHtml);
       // The backend just emitted feeds-updated; this refreshes the same
       // article-bearing caches FreshRSS sync touches so newly-pulled
       // Reader documents appear in the sidebar / article list immediately.
@@ -1191,10 +1208,19 @@ function ReadwiseReaderGroup({ onToast }: { onToast: (m: string) => void }) {
     }
   };
 
-  const locationOptions = READWISE_LOCATIONS.map((l) => ({
-    value: l,
-    label: t(readwiseLocationLabelKey(l)),
-  }));
+  // First option is the "no filter" sentinel; the rest are the 9 real
+  // categories. The <Select> below carries plain strings; the empty value
+  // round-trips back to `null` in `changeCategory`.
+  const categoryOptions = [
+    {
+      value: READWISE_CATEGORY_ANY,
+      label: t("settings.sync.readwise.categoryAny"),
+    },
+    ...READWISE_CATEGORIES.map((c) => ({
+      value: c,
+      label: t(readwiseCategoryLabelKey(c)),
+    })),
+  ];
 
   const tokenStatusLabel =
     hasToken === null
@@ -1259,13 +1285,13 @@ function ReadwiseReaderGroup({ onToast }: { onToast: (m: string) => void }) {
         </button>
       </div>
       <Row
-        label={t("settings.sync.readwise.locationLabel")}
-        desc={t("settings.sync.readwise.locationDesc")}
+        label={t("settings.sync.readwise.categoryLabel")}
+        desc={t("settings.sync.readwise.categoryDesc")}
       >
-        <Select<ReadwiseLocation>
-          value={location}
-          options={locationOptions}
-          onChange={changeLocation}
+        <Select<string>
+          value={category ?? READWISE_CATEGORY_ANY}
+          options={categoryOptions}
+          onChange={changeCategory}
         />
       </Row>
       <Row

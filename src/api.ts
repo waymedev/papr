@@ -171,25 +171,30 @@ export const freshrssDisconnect = () => invoke<void>("freshrss_disconnect");
 export const freshrssSync = () => invoke<number>("freshrss_sync");
 
 // ── Readwise Reader sync ──
-/** A Reader location filter — mirrors the values the Reader API accepts on
- *  `GET /api/v3/list/?location=`. The matching server-side command passes the
+/** A Reader category filter — mirrors the values the Reader API accepts on
+ *  `GET /api/v3/list/?category=`. The matching server-side command passes the
  *  string through unchanged, so adding a value here is a UI-only change. */
-export type ReadwiseLocation =
-  | "new"
-  | "later"
-  | "shortlist"
-  | "archive"
-  | "feed";
+export type ReadwiseCategory =
+  | "article"
+  | "email"
+  | "rss"
+  | "highlight"
+  | "note"
+  | "pdf"
+  | "epub"
+  | "tweet"
+  | "video";
 
 /** Pull the user's Readwise Reader document list and upsert each parent
  *  document into the synthetic Readwise feed. Resolves with the number of
- *  *new* documents added on this run. `location` filters which Reader bucket
- *  to pull; `withHtml` toggles the costly `withHtmlContent=true` request
- *  flag (the API only returns html_content when explicitly asked). */
+ *  *new* documents added on this run. `category` filters which Reader
+ *  category to pull (null = no filter, pull everything); `withHtml` toggles
+ *  the costly `withHtmlContent=true` request flag (the API only returns
+ *  html_content when explicitly asked). */
 export const readwiseReaderSync = (
-  location: ReadwiseLocation | null,
+  category: ReadwiseCategory | null,
   withHtml: boolean,
-) => invoke<number>("readwise_reader_sync", { location, withHtml });
+) => invoke<number>("readwise_reader_sync", { category, withHtml });
 
 /** Whether a Readwise API token is currently stored. The backend never
  *  returns the token itself — only a presence flag — so the renderer cannot

@@ -363,20 +363,25 @@
         "tokenCleared": "Readwise トークンを削除しました",
         "tokenTestSuccess": "Readwise トークンは有効です",
         "tokenTestFailed": "Readwise トークンの確認に失敗しました：{{reason}}",
-        "locationLabel": "場所",
-        "locationDesc": "同期ごとに取得する Reader の場所を選びます。",
+        "categoryLabel": "カテゴリ",
+        "categoryDesc": "同期ごとに取得する Reader のカテゴリを選びます。未指定の場合はすべて取得します。",
+        "categoryAny": "すべて（フィルタなし）",
         "withHtmlLabel": "全文を含める",
         "withHtmlDesc": "同期時にドキュメント本文も取得します。通信量は増えますが、記事をオフラインで最後まで読めます。",
         "syncNow": "今すぐ同期",
         "syncing": "同期中…",
         "syncDone": "Readwise の同期が完了しました · {{count}} 件追加",
         "syncFailed": "Readwise の同期に失敗しました：{{reason}}",
-        "location": {
-          "new": "新規",
-          "later": "あとで読む",
-          "shortlist": "ショートリスト",
-          "archive": "アーカイブ",
-          "feed": "フィード"
+        "category": {
+          "article": "記事",
+          "email": "メール",
+          "rss": "RSS",
+          "highlight": "ハイライト",
+          "note": "ノート",
+          "pdf": "PDF",
+          "epub": "EPUB",
+          "tweet": "ツイート",
+          "video": "動画"
         }
       }
     },
