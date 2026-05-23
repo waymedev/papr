@@ -363,20 +363,25 @@
         "tokenCleared": "Readwise token cleared",
         "tokenTestSuccess": "Readwise token works",
         "tokenTestFailed": "Readwise token test failed: {{reason}}",
-        "locationLabel": "Location",
-        "locationDesc": "Which Reader bucket to pull on each sync.",
+        "categoryLabel": "Category",
+        "categoryDesc": "Which Reader category to pull on each sync. Leave unset to pull every category.",
+        "categoryAny": "Any (no filter)",
         "withHtmlLabel": "Include full content",
         "withHtmlDesc": "Request the document body with each pull. Larger payload but the article is fully readable offline.",
         "syncNow": "Sync now",
         "syncing": "Syncing…",
         "syncDone": "Readwise sync complete · {{count}} new",
         "syncFailed": "Readwise sync failed: {{reason}}",
-        "location": {
-          "new": "New",
-          "later": "Later",
-          "shortlist": "Shortlist",
-          "archive": "Archive",
-          "feed": "Feed"
+        "category": {
+          "article": "Article",
+          "email": "Email",
+          "rss": "RSS",
+          "highlight": "Highlight",
+          "note": "Note",
+          "pdf": "PDF",
+          "epub": "EPUB",
+          "tweet": "Tweet",
+          "video": "Video"
         }
       }
     },

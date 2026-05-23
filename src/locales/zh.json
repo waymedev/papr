@@ -363,20 +363,25 @@
         "tokenCleared": "Readwise token 已清除",
         "tokenTestSuccess": "Readwise token 可用",
         "tokenTestFailed": "Readwise token 测试失败：{{reason}}",
-        "locationLabel": "位置",
-        "locationDesc": "每次同步要拉取的 Reader 文档分区。",
+        "categoryLabel": "分类",
+        "categoryDesc": "每次同步要拉取的 Reader 文档分类。留空则不过滤分类，拉取全部。",
+        "categoryAny": "全部（不过滤）",
         "withHtmlLabel": "包含全文内容",
         "withHtmlDesc": "同步时请求文档正文。数据量更大，但文章可离线完整阅读。",
         "syncNow": "立即同步",
         "syncing": "同步中…",
         "syncDone": "Readwise 同步完成 · 新增 {{count}} 篇",
         "syncFailed": "Readwise 同步失败：{{reason}}",
-        "location": {
-          "new": "新建",
-          "later": "稍后读",
-          "shortlist": "精选列表",
-          "archive": "归档",
-          "feed": "Feed"
+        "category": {
+          "article": "文章",
+          "email": "邮件",
+          "rss": "RSS",
+          "highlight": "标注",
+          "note": "笔记",
+          "pdf": "PDF",
+          "epub": "EPUB",
+          "tweet": "推文",
+          "video": "视频"
         }
       }
     },
