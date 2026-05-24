@@ -43,6 +43,10 @@ export const addFeed = (url: string, folderId: number | null) =>
 export const searchFeedDirectory = (query: string, lang: string) =>
   invoke<DiscoveryResult[]>("search_feed_directory", { query, lang });
 export const deleteFeed = (id: number) => invoke<void>("delete_feed", { id });
+/** Wipe every locally-synced article for a feed; the subscription stays so the
+ *  next refresh repopulates it. Resolves with the number of articles removed. */
+export const clearFeedItems = (id: number) =>
+  invoke<number>("clear_feed_items", { id });
 export const moveFeed = (id: number, folderId: number | null) =>
   invoke<void>("move_feed", { id, folderId });
 export const renameFeed = (id: number, title: string) =>

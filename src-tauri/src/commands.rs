@@ -236,6 +236,20 @@ pub async fn delete_feed(state: State<'_, AppState>, id: i64) -> AppResult<()> {
     db::delete_feed(&conn, id)
 }
 
+/// Delete every locally-synced article for `id`. The subscription stays;
+/// subsequent refreshes repopulate from upstream. Returns the number removed.
+#[tauri::command]
+pub async fn clear_feed_items(app: AppHandle, id: i64) -> AppResult<usize> {
+    let n = {
+        let state = app.state::<AppState>();
+        let conn = state.db.lock().await;
+        db::clear_feed_items(&conn, id)?
+    };
+    let _ = app.emit("feeds-updated", 0);
+    refresh_unread_surfaces(&app).await;
+    Ok(n)
+}
+
 #[tauri::command]
 pub async fn move_feed(
     state: State<'_, AppState>,

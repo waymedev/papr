@@ -10,6 +10,7 @@ import { tagColor, TAG_PALETTE } from "../lib/tagColors";
 import type { ArticleQuery, Feed, Folder, Tag } from "../types";
 import Icon, { type IconName } from "./Icon";
 import ContextMenu, { type MenuEntry } from "./ContextMenu";
+import ConfirmDialog from "./ConfirmDialog";
 import FeedAvatar from "./FeedAvatar";
 import PromptDialog from "./PromptDialog";
 
@@ -113,6 +114,7 @@ export default function Sidebar({
 
   const [menu, setMenu] = useState<Menu | null>(null);
   const [prompt, setPrompt] = useState<Prompt | null>(null);
+  const [confirmClear, setConfirmClear] = useState<Feed | null>(null);
   const [dragId, setDragId] = useState<number | null>(null);
   const [dropFolder, setDropFolder] = useState<number | "none" | null>(null);
   const [tagDragId, setTagDragId] = useState<number | null>(null);
@@ -263,6 +265,12 @@ export default function Sidebar({
       { separator: true },
       {
         icon: "trash",
+        label: t("sidebar.clearItems"),
+        danger: true,
+        onClick: () => setConfirmClear(f),
+      },
+      {
+        icon: "trash",
         label: t("sidebar.unsubscribe"),
         danger: true,
         onClick: () =>
@@ -274,6 +282,28 @@ export default function Sidebar({
           ),
       },
     ];
+  };
+
+  // Wipe every locally-synced article for `f`. Confirmed via ConfirmDialog
+  // because the data is gone for good (a re-refresh only repopulates whatever
+  // the upstream feed still serves, which is usually fewer items). Also closes
+  // the reader if the open article belonged to this feed.
+  const doClearFeedItems = (f: Feed) => {
+    const st = useUi.getState();
+    if (st.selectedArticleId != null) {
+      const open = qc.getQueryData<{ feedId: number }>([
+        "article",
+        st.selectedArticleId,
+      ]);
+      if (open?.feedId === f.id) st.openArticle(null);
+    }
+    api
+      .clearFeedItems(f.id)
+      .then((n) => {
+        actions.refreshAfterBulk();
+        onToast(t("sidebar.toastItemsCleared", { feed: f.title, count: n }));
+      })
+      .catch((e) => reportError(e));
   };
 
   const folderMenu = (folder: Folder): MenuEntry[] => [
@@ -746,6 +776,15 @@ export default function Sidebar({
           placeholder={prompt.placeholder}
           onSubmit={prompt.onSubmit}
           onClose={() => setPrompt(null)}
+        />
+      )}
+      {confirmClear && (
+        <ConfirmDialog
+          title={t("sidebar.clearItemsTitle")}
+          message={t("sidebar.clearItemsConfirm", { feed: confirmClear.title })}
+          confirmLabel={t("sidebar.clearItems")}
+          onConfirm={() => doClearFeedItems(confirmClear)}
+          onClose={() => setConfirmClear(null)}
         />
       )}
     </div>
